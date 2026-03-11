@@ -10,7 +10,7 @@ A Threads analytics platform that caches posts, analyzes them with an LLM, and v
 | Backend framework | Axum (via Shuttle) | Shuttle provides ergonomic Rust deployment, first-class axum support |
 | Frontend framework | Svelte (SvelteKit) | Lighter weight than React, clean d3/Sigma.js integration via direct DOM access |
 | Frontend hosting | Netlify | Existing familiarity, good static/SSR hosting |
-| Database | Supabase (Postgres) | Direct sqlx connection from Rust, built-in auth for future multi-user |
+| Database | Shuttle Postgres | Built-in provisioning via `#[shuttle_shared_db::Postgres]`, zero external setup. Migrate to Supabase when multi-user needs arise |
 | Analytics charts | Chart.js | Svelte-compatible, Canvas-based, good for time-series and bar/pie charts |
 | Graph visualization | Sigma.js + Graphology | WebGL rendering handles 20k-50k nodes, ForceAtlas2 in WebWorker, filtering/search built-in |
 | LLM for analysis | Mercury (Inception Labs) | Diffusion-based LLM, OpenAI API-compatible, fast inference for batch analysis |
@@ -21,19 +21,19 @@ A Threads analytics platform that caches posts, analyzes them with an LLM, and v
 Three layers:
 
 1. **Rust API server** (Shuttle + axum) — Threads API sync, Mercury LLM analysis, graph edge computation, REST API for frontend
-2. **Supabase Postgres** — post cache, LLM analysis results, graph edges, engagement time-series
+2. **Shuttle Postgres** — post cache, LLM analysis results, graph edges, engagement time-series
 3. **Svelte frontend** (Netlify) — Sigma.js node graph, analytics charts, power-user filters
 
 Data flow:
 
 ```
-Threads API -> Rust backend (sync + cache) -> Supabase Postgres
+Threads API -> Rust backend (sync + cache) -> Shuttle Postgres
                     |
             Mercury LLM (analyze posts -> topics, themes, sentiment)
                     |
             Graph computation (build edges with weights)
                     |
-            Supabase Postgres (store graph + analytics)
+            Shuttle Postgres (store graph + analytics)
                     |
             Svelte dashboard <- Rust API (REST, polled)
                     |
@@ -229,7 +229,7 @@ For large accounts (20k+ posts), `GET /graph` should support pagination or level
 
 ## Future
 
-- Multi-user: Supabase Auth + Threads OAuth, row-level security
+- Multi-user: migrate to Supabase (Auth + RLS + real-time), Threads OAuth
 - Android client: extract postgraph-core crate, share types via UniFFI, native Compose UI
-- Supabase real-time subscriptions for live dashboard updates (when multi-user justifies the complexity)
+- Supabase migration: real-time subscriptions, Auth, row-level security when multi-user justifies the complexity
 - Additional platforms beyond Threads
