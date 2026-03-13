@@ -130,6 +130,7 @@ async fn main() {
 
     let router = Router::new()
         .route("/health", get(|| async { "ok" }))
+        .route("/health/detail", get(routes::health::detailed_health))
         .merge(api_routes)
         .layer(cors)
         .with_state(state);

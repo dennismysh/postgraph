@@ -9,6 +9,7 @@
     <div class="nav-links">
       <a href="/" class:active={$page.url.pathname === '/'}>Graph</a>
       <a href="/analytics" class:active={$page.url.pathname === '/analytics'}>Analytics</a>
+      <a href="/health" class:active={$page.url.pathname === '/health'}>Health</a>
     </div>
     <a href="/logout" class="logout">Logout</a>
   </nav>
