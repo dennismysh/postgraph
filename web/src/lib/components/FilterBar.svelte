@@ -1,6 +1,7 @@
 <script lang="ts">
   import { filters, resetFilters } from '$lib/stores/filters';
-  import { graphData } from '$lib/stores/graph';
+  import { graphData, loadGraph } from '$lib/stores/graph';
+  import { api } from '$lib/api';
 
   let allTopics = $derived.by(() => {
     const data = $graphData;
@@ -12,6 +13,9 @@
     return [...topicSet].sort();
   });
 
+  let reanalyzing = $state(false);
+  let reanalyzeStatus = $state('');
+
   function toggleTopic(topic: string) {
     filters.update(f => {
       const topics = f.topics.includes(topic)
@@ -19,6 +23,22 @@
         : [...f.topics, topic];
       return { ...f, topics };
     });
+  }
+
+  async function handleReanalyze() {
+    if (!confirm('This will re-run Mercury analysis on all posts. This may take a while. Continue?')) return;
+    reanalyzing = true;
+    reanalyzeStatus = 'Reanalyzing...';
+    try {
+      const result = await api.triggerReanalyze();
+      reanalyzeStatus = `Done! ${result.posts_analyzed} posts analyzed, ${result.edges_computed} edges computed.`;
+      await loadGraph();
+    } catch (e) {
+      reanalyzeStatus = `Failed: ${e instanceof Error ? e.message : 'Unknown error'}`;
+    } finally {
+      reanalyzing = false;
+      setTimeout(() => { reanalyzeStatus = ''; }, 5000);
+    }
   }
 </script>
 
@@ -55,7 +75,15 @@
     {/each}
   </div>
 
-  <button class="reset" onclick={resetFilters}>Reset</button>
+  <div class="actions">
+    <button class="reset" onclick={resetFilters}>Reset</button>
+    <button class="reanalyze" onclick={handleReanalyze} disabled={reanalyzing}>
+      {reanalyzing ? 'Reanalyzing...' : 'Reanalyze'}
+    </button>
+  </div>
+  {#if reanalyzeStatus}
+    <span class="status">{reanalyzeStatus}</span>
+  {/if}
 </div>
 
 <style>
@@ -106,6 +134,10 @@
     border-color: #4363d8;
     color: white;
   }
+  .actions {
+    display: flex;
+    gap: 0.3rem;
+  }
   .reset {
     background: #333;
     border: 1px solid #555;
@@ -113,6 +145,23 @@
     padding: 0.3rem 0.6rem;
     border-radius: 4px;
     cursor: pointer;
+  }
+  .reanalyze {
+    background: #8b5cf6;
+    border: 1px solid #7c3aed;
+    color: white;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+  }
+  .reanalyze:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .status {
+    font-size: 0.75rem;
+    color: #aaa;
   }
   label { color: #888; font-size: 0.8rem; }
 </style>

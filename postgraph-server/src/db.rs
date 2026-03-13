@@ -53,6 +53,17 @@ pub async fn mark_post_analyzed(pool: &PgPool, post_id: &str, sentiment: f32) ->
     Ok(())
 }
 
+pub async fn reset_all_analysis(pool: &PgPool) -> sqlx::Result<u64> {
+    // Delete edges, post_topics, then reset analyzed_at
+    sqlx::query("DELETE FROM post_edges").execute(pool).await?;
+    sqlx::query("DELETE FROM post_topics").execute(pool).await?;
+    sqlx::query("DELETE FROM topics").execute(pool).await?;
+    let result = sqlx::query("UPDATE posts SET analyzed_at = NULL, sentiment = NULL")
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
 // -- Topics --
 
 pub async fn upsert_topic(pool: &PgPool, name: &str, description: &str) -> sqlx::Result<Topic> {

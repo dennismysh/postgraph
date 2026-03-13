@@ -5,10 +5,15 @@ use crate::db;
 use crate::error::AppError;
 use crate::mercury::MercuryClient;
 
-const ANALYSIS_BATCH_SIZE: i64 = 15;
+fn analysis_batch_size() -> i64 {
+    std::env::var("ANALYSIS_BATCH_SIZE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50)
+}
 
 pub async fn run_analysis(pool: &PgPool, mercury: &MercuryClient) -> Result<u32, AppError> {
-    let unanalyzed = db::get_unanalyzed_posts(pool, ANALYSIS_BATCH_SIZE).await?;
+    let unanalyzed = db::get_unanalyzed_posts(pool, analysis_batch_size()).await?;
     if unanalyzed.is_empty() {
         return Ok(0);
     }
