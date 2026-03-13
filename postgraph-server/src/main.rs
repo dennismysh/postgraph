@@ -1,5 +1,7 @@
+mod analysis;
 mod db;
 mod error;
+mod graph;
 mod mercury;
 mod sync;
 mod threads;
