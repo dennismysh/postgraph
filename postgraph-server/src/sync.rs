@@ -51,41 +51,52 @@ pub async fn run_sync(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppE
             let post = threads_post_to_post(tp);
             db::upsert_post(pool, &post).await?;
 
-            // Fetch insights with throttling
-            match client.get_post_insights(&tp.id).await {
-                Ok(insights) => {
-                    sqlx::query(
-                        "UPDATE posts SET views = $1, likes = $2, replies_count = $3, reposts = $4, quotes = $5, shares = $6 WHERE id = $7",
-                    )
-                    .bind(insights.views)
-                    .bind(insights.likes)
-                    .bind(insights.replies)
-                    .bind(insights.reposts)
-                    .bind(insights.quotes)
-                    .bind(insights.shares)
-                    .bind(&tp.id)
-                    .execute(pool)
-                    .await?;
+            // Fetch insights with throttling and retry on rate limit
+            let mut retries = 0u32;
+            loop {
+                match client.get_post_insights(&tp.id).await {
+                    Ok(insights) => {
+                        sqlx::query(
+                            "UPDATE posts SET views = $1, likes = $2, replies_count = $3, reposts = $4, quotes = $5, shares = $6 WHERE id = $7",
+                        )
+                        .bind(insights.views)
+                        .bind(insights.likes)
+                        .bind(insights.replies)
+                        .bind(insights.reposts)
+                        .bind(insights.quotes)
+                        .bind(insights.shares)
+                        .bind(&tp.id)
+                        .execute(pool)
+                        .await?;
 
-                    db::insert_engagement_snapshot(
-                        pool,
-                        &tp.id,
-                        insights.likes,
-                        insights.replies,
-                        insights.reposts,
-                        insights.quotes,
-                    )
-                    .await?;
-                }
-                Err(AppError::RateLimited(secs)) => {
-                    warn!(
-                        "Rate limited fetching insights for {}, waiting {}s",
-                        tp.id, secs
-                    );
-                    tokio::time::sleep(Duration::from_secs(secs)).await;
-                }
-                Err(e) => {
-                    warn!("Failed to fetch insights for {}: {}", tp.id, e);
+                        db::insert_engagement_snapshot(
+                            pool,
+                            &tp.id,
+                            insights.views,
+                            insights.likes,
+                            insights.replies,
+                            insights.reposts,
+                            insights.quotes,
+                        )
+                        .await?;
+                        break;
+                    }
+                    Err(AppError::RateLimited(secs)) => {
+                        retries += 1;
+                        if retries > 3 {
+                            warn!("Rate limited too many times for {}, skipping", tp.id);
+                            break;
+                        }
+                        warn!(
+                            "Rate limited fetching insights for {}, waiting {}s (attempt {}/3)",
+                            tp.id, secs, retries
+                        );
+                        tokio::time::sleep(Duration::from_secs(secs)).await;
+                    }
+                    Err(e) => {
+                        warn!("Failed to fetch insights for {}: {}", tp.id, e);
+                        break;
+                    }
                 }
             }
 

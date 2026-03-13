@@ -48,6 +48,7 @@ pub struct EngagementSnapshot {
     pub id: Uuid,
     pub post_id: String,
     pub captured_at: DateTime<Utc>,
+    pub views: i32,
     pub likes: i32,
     pub replies_count: i32,
     pub reposts: i32,
