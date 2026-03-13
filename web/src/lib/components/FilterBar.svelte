@@ -13,6 +13,8 @@
     return [...topicSet].sort();
   });
 
+  let syncing = $state(false);
+  let syncStatus = $state('');
   let reanalyzing = $state(false);
   let reanalyzeStatus = $state('');
 
@@ -23,6 +25,21 @@
         : [...f.topics, topic];
       return { ...f, topics };
     });
+  }
+
+  async function handleSync() {
+    syncing = true;
+    syncStatus = 'Syncing...';
+    try {
+      const result = await api.triggerSync();
+      syncStatus = `Done! ${result.posts_synced} posts synced, ${result.posts_analyzed} analyzed, ${result.edges_computed} edges computed.`;
+      await loadGraph();
+    } catch (e) {
+      syncStatus = `Failed: ${e instanceof Error ? e.message : 'Unknown error'}`;
+    } finally {
+      syncing = false;
+      setTimeout(() => { syncStatus = ''; }, 5000);
+    }
   }
 
   async function handleReanalyze() {
@@ -77,10 +94,16 @@
 
   <div class="actions">
     <button class="reset" onclick={resetFilters}>Reset</button>
+    <button class="sync" onclick={handleSync} disabled={syncing}>
+      {syncing ? 'Syncing...' : 'Sync'}
+    </button>
     <button class="reanalyze" onclick={handleReanalyze} disabled={reanalyzing}>
       {reanalyzing ? 'Reanalyzing...' : 'Reanalyze'}
     </button>
   </div>
+  {#if syncStatus}
+    <span class="status">{syncStatus}</span>
+  {/if}
   {#if reanalyzeStatus}
     <span class="status">{reanalyzeStatus}</span>
   {/if}
@@ -147,6 +170,19 @@
     padding: 0.3rem 0.6rem;
     border-radius: 4px;
     cursor: pointer;
+  }
+  .sync {
+    background: #2563eb;
+    border: 1px solid #1d4ed8;
+    color: white;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+  }
+  .sync:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .reanalyze {
     background: #8b5cf6;
