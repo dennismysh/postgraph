@@ -17,6 +17,8 @@
   let syncing = $state(false);
   let syncStatus = $state('');
   let statusInterval: ReturnType<typeof setInterval> | null = null;
+  let allViewsData: ViewsPoint[] = $state([]);
+  let rangeSums: Record<string, number> = $state({});
 
   const timeRanges = [
     { label: 'Last 24 Hours', value: '24h' },
@@ -76,9 +78,41 @@
       });
   }
 
+  function computeRangeSums(allData: ViewsPoint[]) {
+    const sums: Record<string, number> = {};
+    for (const range of timeRanges) {
+      const since = getSinceDate(range.value);
+      if (!since) {
+        sums[range.value] = allData.reduce((s, p) => s + p.views, 0);
+      } else {
+        const sinceDate = since.slice(0, 10);
+        sums[range.value] = allData
+          .filter(p => p.date >= sinceDate)
+          .reduce((s, p) => s + p.views, 0);
+      }
+    }
+    return sums;
+  }
+
+  function formatNum(n: number): string {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+    return n.toLocaleString();
+  }
+
+  async function loadAllViews() {
+    allViewsData = await api.getViews();
+    rangeSums = computeRangeSums(allViewsData);
+  }
+
   async function loadViews() {
     const since = getSinceDate(selectedRange);
-    viewsData = await api.getViews(since);
+    if (since) {
+      const sinceDate = since.slice(0, 10);
+      viewsData = allViewsData.filter(p => p.date >= sinceDate);
+    } else {
+      viewsData = allViewsData;
+    }
     await tick();
     renderViewsChart();
   }
@@ -105,7 +139,7 @@
             return gradient;
           },
           fill: true,
-          tension: 0.4,
+          cubicInterpolationMode: 'monotone' as const,
           borderWidth: 2.5,
           pointRadius: chartData.length > 30 ? 0 : 3,
           pointHoverRadius: 6,
@@ -179,6 +213,7 @@
     const [analyticsResult, postsResult] = await Promise.all([
       api.getAnalytics(),
       api.getPosts(),
+      loadAllViews(),
     ]);
     analytics = analyticsResult;
     recentPosts = postsResult.slice(0, 10);
@@ -190,7 +225,7 @@
     syncStatus = 'Syncing...';
     try {
       const result = await api.triggerSync();
-      syncStatus = `Done! ${result.posts_synced} synced, ${result.metrics_refreshed} refreshed, ${result.posts_analyzed} analyzed, ${result.edges_computed} edges.`;
+      syncStatus = `Done! ${result.posts_synced} synced, ${result.metrics_refreshed} refreshed.`;
       await refreshAll();
     } catch (e) {
       syncStatus = `Failed: ${e instanceof Error ? e.message : 'Unknown error'}`;
@@ -227,9 +262,9 @@
       data: {
         labels: analytics.engagement_over_time.map(e => e.date),
         datasets: [
-          { label: 'Likes', data: analytics.engagement_over_time.map(e => e.likes), borderColor: '#e6194b' },
-          { label: 'Replies', data: analytics.engagement_over_time.map(e => e.replies), borderColor: '#3cb44b' },
-          { label: 'Reposts', data: analytics.engagement_over_time.map(e => e.reposts), borderColor: '#4363d8' },
+          { label: 'Likes', data: analytics.engagement_over_time.map(e => e.likes), borderColor: '#e6194b', cubicInterpolationMode: 'monotone' as const },
+          { label: 'Replies', data: analytics.engagement_over_time.map(e => e.replies), borderColor: '#3cb44b', cubicInterpolationMode: 'monotone' as const },
+          { label: 'Reposts', data: analytics.engagement_over_time.map(e => e.reposts), borderColor: '#4363d8', cubicInterpolationMode: 'monotone' as const },
         ],
       },
       options: {
@@ -242,7 +277,8 @@
       },
     });
 
-    // Views over time
+    // Views over time – load all data once, compute per-range sums client-side
+    await loadAllViews();
     await loadViews();
 
     // Topics breakdown — show top 15 topics, dynamic height
@@ -322,7 +358,7 @@
               class="filter-btn"
               class:active={selectedRange === range.value}
               onclick={() => { selectedRange = range.value; loadViews(); }}
-            >{range.label}</button>
+            >{range.label}{#if rangeSums[range.value] != null} <span class="range-sum">({formatNum(rangeSums[range.value])})</span>{/if}</button>
           {/each}
         </div>
       </div>
@@ -487,6 +523,10 @@
     background: #4363d8;
     color: white;
     border-color: #4363d8;
+  }
+  .range-sum {
+    opacity: 0.7;
+    font-size: 0.65rem;
   }
   .posts-card { margin-top: 1rem; }
   .table-wrapper { overflow-x: auto; }
