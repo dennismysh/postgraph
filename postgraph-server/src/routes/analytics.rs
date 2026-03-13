@@ -36,6 +36,7 @@ pub struct ViewsPoint {
 #[derive(Deserialize)]
 pub struct ViewsQuery {
     pub since: Option<String>,
+    pub grouping: Option<String>,
 }
 
 pub async fn get_views(
@@ -53,8 +54,18 @@ pub async fn get_views(
         String::new()
     };
 
+    let is_hourly = query.grouping.as_deref() == Some("hourly");
+    let (date_expr, date_format) = if is_hourly {
+        (
+            "DATE_TRUNC('hour', p.timestamp)",
+            "TO_CHAR(DATE_TRUNC('hour', p.timestamp), 'YYYY-MM-DD HH24:00')",
+        )
+    } else {
+        ("DATE(p.timestamp)", "DATE(p.timestamp)::text")
+    };
+
     let sql = format!(
-        r#"SELECT DATE(p.timestamp)::text as date, SUM(COALESCE(latest.views, p.views))::bigint as total_views
+        r#"SELECT {date_format} as date, SUM(COALESCE(latest.views, p.views))::bigint as total_views
            FROM posts p
            LEFT JOIN LATERAL (
                SELECT views FROM engagement_snapshots es
@@ -62,10 +73,12 @@ pub async fn get_views(
                ORDER BY es.captured_at DESC
                LIMIT 1
            ) latest ON true
-           {}
-           GROUP BY DATE(p.timestamp)
+           {since_clause}
+           GROUP BY {date_expr}
            ORDER BY date"#,
-        since_clause
+        date_format = date_format,
+        since_clause = since_clause,
+        date_expr = date_expr,
     );
 
     let rows: Vec<(String, i64)> = sqlx::query_as(&sql)

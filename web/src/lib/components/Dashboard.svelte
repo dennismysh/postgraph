@@ -46,9 +46,9 @@
     return now.toISOString();
   }
 
-  function getGrouping(range: string): 'daily' | 'weekly' {
-    // Daily for short ranges, weekly for 30d+
-    if (range === '24h' || range === '7d' || range === '14d') return 'daily';
+  function getGrouping(range: string): 'hourly' | 'daily' | 'weekly' {
+    if (range === '24h') return 'hourly';
+    if (range === '7d' || range === '14d') return 'daily';
     return 'weekly';
   }
 
@@ -59,7 +59,16 @@
     return d.toISOString().slice(0, 10);
   }
 
-  function groupViewsData(data: ViewsPoint[], grouping: 'daily' | 'weekly'): ViewsPoint[] {
+  function groupViewsData(data: ViewsPoint[], grouping: 'hourly' | 'daily' | 'weekly'): ViewsPoint[] {
+    if (grouping === 'hourly') {
+      // Data already comes hourly from backend (format: "YYYY-MM-DD HH:00")
+      // Format labels for readability
+      return data.map(point => {
+        const label = point.date.slice(5); // "MM-DD HH:00"
+        return { date: label, views: point.views };
+      });
+    }
+
     if (grouping === 'daily') return data;
 
     const grouped = new Map<string, number>();
@@ -106,12 +115,21 @@
   }
 
   async function loadViews() {
-    const since = getSinceDate(selectedRange);
-    if (since) {
-      const sinceDate = since.slice(0, 10);
-      viewsData = allViewsData.filter(p => p.date >= sinceDate);
+    const grouping = getGrouping(selectedRange);
+
+    if (grouping === 'hourly') {
+      // Fetch hourly data from backend for 24h range
+      const since = getSinceDate(selectedRange);
+      viewsData = await api.getViews(since, 'hourly');
     } else {
-      viewsData = allViewsData;
+      // Use cached daily data, filter client-side
+      const since = getSinceDate(selectedRange);
+      if (since) {
+        const sinceDate = since.slice(0, 10);
+        viewsData = allViewsData.filter(p => p.date >= sinceDate);
+      } else {
+        viewsData = allViewsData;
+      }
     }
     await tick();
     renderViewsChart();
@@ -351,7 +369,7 @@
 
     <div class="chart-card views-card">
       <div class="chart-header">
-        <h3>Views Over Time {#if getGrouping(selectedRange) === 'weekly'}<span class="grouping-label">(weekly)</span>{/if}</h3>
+        <h3>Views Over Time {#if getGrouping(selectedRange) !== 'daily'}<span class="grouping-label">({getGrouping(selectedRange)})</span>{/if}</h3>
         <div class="time-filters">
           {#each timeRanges as range}
             <button
