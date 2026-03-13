@@ -8,12 +8,10 @@ pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
         r#"INSERT INTO posts (id, text, media_type, media_url, timestamp, permalink, views, likes, replies_count, reposts, quotes, shares, synced_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
            ON CONFLICT (id) DO UPDATE SET
-             views = EXCLUDED.views,
-             likes = EXCLUDED.likes,
-             replies_count = EXCLUDED.replies_count,
-             reposts = EXCLUDED.reposts,
-             quotes = EXCLUDED.quotes,
-             shares = EXCLUDED.shares,
+             text = COALESCE(EXCLUDED.text, posts.text),
+             media_type = COALESCE(EXCLUDED.media_type, posts.media_type),
+             media_url = COALESCE(EXCLUDED.media_url, posts.media_url),
+             permalink = COALESCE(EXCLUDED.permalink, posts.permalink),
              synced_at = NOW()"#,
     )
     .bind(&post.id)
@@ -176,16 +174,18 @@ pub async fn get_all_edges(pool: &PgPool) -> sqlx::Result<Vec<PostEdge>> {
 pub async fn insert_engagement_snapshot(
     pool: &PgPool,
     post_id: &str,
+    views: i32,
     likes: i32,
     replies_count: i32,
     reposts: i32,
     quotes: i32,
 ) -> sqlx::Result<()> {
     sqlx::query(
-        r#"INSERT INTO engagement_snapshots (post_id, likes, replies_count, reposts, quotes)
-           VALUES ($1, $2, $3, $4, $5)"#,
+        r#"INSERT INTO engagement_snapshots (post_id, views, likes, replies_count, reposts, quotes)
+           VALUES ($1, $2, $3, $4, $5, $6)"#,
     )
     .bind(post_id)
+    .bind(views)
     .bind(likes)
     .bind(replies_count)
     .bind(reposts)
