@@ -1,5 +1,6 @@
 mod db;
 mod error;
+mod mercury;
 mod sync;
 mod threads;
 mod types;
