@@ -165,8 +165,12 @@ impl ThreadsClient {
             return Err(AppError::RateLimited(60));
         }
         if !resp.status().is_success() {
-            // Some posts may not support insights; return zeros
-            return Ok(PostInsights::default());
+            // Some posts may not support insights; signal the caller so it
+            // can decide whether to overwrite existing metrics.
+            return Err(AppError::ThreadsApi(format!(
+                "Insights unavailable (HTTP {})",
+                resp.status()
+            )));
         }
 
         let data: InsightsResponse = resp.json().await?;

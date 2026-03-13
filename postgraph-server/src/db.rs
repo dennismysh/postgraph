@@ -105,6 +105,14 @@ pub async fn reset_all_analysis(pool: &PgPool) -> sqlx::Result<u64> {
     Ok(result.rows_affected())
 }
 
+pub async fn get_all_post_ids(pool: &PgPool) -> sqlx::Result<Vec<String>> {
+    let rows: Vec<(String,)> =
+        sqlx::query_as("SELECT id FROM posts ORDER BY timestamp DESC")
+            .fetch_all(pool)
+            .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 // -- Topics --
 
 pub async fn upsert_topic(pool: &PgPool, name: &str, description: &str) -> sqlx::Result<Topic> {
