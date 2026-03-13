@@ -24,19 +24,37 @@ pub async fn trigger_sync(
         axum::http::StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let posts_analyzed = analysis::run_analysis(&state.pool, &state.mercury)
-        .await
-        .map_err(|e| {
-            tracing::error!("Analysis failed: {e}");
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    // Loop analysis until all posts are analyzed (backfill)
+    let mut posts_analyzed: u32 = 0;
+    loop {
+        let batch = analysis::run_analysis(&state.pool, &state.mercury)
+            .await
+            .map_err(|e| {
+                tracing::error!("Analysis failed: {e}");
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        posts_analyzed += batch;
+        if batch == 0 {
+            break;
+        }
+        info!("Analyzed batch of {batch} posts ({posts_analyzed} total so far)");
+    }
 
-    let edges_computed = graph::compute_edges_for_recent(&state.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Edge computation failed: {e}");
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    // Loop edge computation until all analyzed posts have edges
+    let mut edges_computed: u32 = 0;
+    loop {
+        let batch = graph::compute_edges_for_recent(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Edge computation failed: {e}");
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        edges_computed += batch;
+        if batch == 0 {
+            break;
+        }
+        info!("Computed batch of {batch} edges ({edges_computed} total so far)");
+    }
 
     Ok(Json(SyncResult {
         posts_synced,
