@@ -2,12 +2,13 @@
   import { onMount } from 'svelte';
   import Graph from '$lib/components/Graph.svelte';
   import FilterBar from '$lib/components/FilterBar.svelte';
-  import { loadGraph, selectedNode, graphData } from '$lib/stores/graph';
-  import { api, type PostDetail } from '$lib/api';
+  import { loadGraph, selectedNode, graphData, graphInstance } from '$lib/stores/graph';
+  import { api, type PostDetail, type GraphNode } from '$lib/api';
 
   let postDetail: PostDetail | null = $state(null);
   let detailLoading = $state(false);
   let detailError: string | null = $state(null);
+  let previewNode: GraphNode | null = $state(null);
 
   onMount(() => {
     loadGraph();
@@ -16,9 +17,13 @@
   $effect(() => {
     const node = $selectedNode;
     if (node) {
+      // Show preview data from graph immediately
+      const data = $graphData;
+      previewNode = data?.nodes.find(n => n.id === node) ?? null;
       fetchPostDetail(node);
     } else {
       postDetail = null;
+      previewNode = null;
     }
   });
 
@@ -66,7 +71,34 @@
           <button class="close-btn" onclick={closeDetail}>&times;</button>
         </div>
 
-        {#if detailLoading}
+        {#if detailLoading && previewNode}
+          <div class="post-content">
+            <p class="post-text">{previewNode.label}</p>
+          </div>
+          <div class="stats-grid">
+            <div class="stat">
+              <span class="stat-value">{formatNumber(previewNode.engagement)}</span>
+              <span class="stat-label">Engagement</span>
+            </div>
+            {#if previewNode.sentiment !== null}
+              <div class="stat">
+                <span class="stat-value">{previewNode.sentiment.toFixed(2)}</span>
+                <span class="stat-label">Sentiment</span>
+              </div>
+            {/if}
+          </div>
+          {#if previewNode.topics.length > 0}
+            <div class="detail-section">
+              <h3>Topics</h3>
+              <div class="topics">
+                {#each previewNode.topics as topic}
+                  <span class="topic-tag">{topic}</span>
+                {/each}
+              </div>
+            </div>
+          {/if}
+          <p class="loading">Loading full details...</p>
+        {:else if detailLoading}
           <p class="loading">Loading...</p>
         {:else if detailError}
           <p class="error">{detailError}</p>

@@ -48,6 +48,28 @@ pub async fn get_all_posts(pool: &PgPool) -> sqlx::Result<Vec<Post>> {
         .await
 }
 
+/// Lightweight post data for graph nodes — avoids loading full text and media URLs.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct GraphPost {
+    pub id: String,
+    pub text_preview: Option<String>,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub likes: i32,
+    pub replies_count: i32,
+    pub reposts: i32,
+    pub quotes: i32,
+    pub sentiment: Option<f32>,
+    pub analyzed_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+pub async fn get_posts_for_graph(pool: &PgPool) -> sqlx::Result<Vec<GraphPost>> {
+    sqlx::query_as::<_, GraphPost>(
+        "SELECT id, LEFT(text, 80) AS text_preview, timestamp, likes, replies_count, reposts, quotes, sentiment, analyzed_at FROM posts ORDER BY timestamp DESC",
+    )
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn get_post_by_id(pool: &PgPool, post_id: &str) -> sqlx::Result<Option<Post>> {
     sqlx::query_as::<_, Post>("SELECT * FROM posts WHERE id = $1")
         .bind(post_id)
