@@ -67,8 +67,8 @@ async fn main(#[shuttle_shared_db::Postgres] pool: PgPool) -> ShuttleAxum {
         }
     });
 
-    let frontend_origin = std::env::var("FRONTEND_ORIGIN")
-        .unwrap_or_else(|_| "http://localhost:5173".to_string());
+    let frontend_origin =
+        std::env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
     let cors = CorsLayer::new()
         .allow_origin(
             frontend_origin
