@@ -45,12 +45,13 @@ pub async fn get_views(
 ) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
     // Compute view *deltas* between consecutive engagement snapshots so that
     // views are attributed to when they were received, not when the post was
-    // published.  The CTE computes LAG over ALL snapshots (no date filter) so
-    // that the first delta inside the requested period is accurate, then the
-    // outer query filters by captured_at.
+    // published.  For the first snapshot of each post (no previous snapshot),
+    // we attribute those views to the post's publication date since we don't
+    // know when they actually accumulated.  For subsequent snapshots, the delta
+    // is attributed to the snapshot's captured_at time.
     let since_clause = if let Some(ref since) = query.since {
         format!(
-            "WHERE captured_at >= '{}'::timestamptz",
+            "WHERE effective_date >= '{}'::timestamptz",
             since.replace('\'', "")
         )
     } else {
@@ -60,24 +61,35 @@ pub async fn get_views(
     let is_hourly = query.grouping.as_deref() == Some("hourly");
     let (date_expr, date_format) = if is_hourly {
         (
-            "DATE_TRUNC('hour', captured_at)",
-            "TO_CHAR(DATE_TRUNC('hour', captured_at), 'YYYY-MM-DD HH24:00')",
+            "DATE_TRUNC('hour', effective_date)",
+            "TO_CHAR(DATE_TRUNC('hour', effective_date), 'YYYY-MM-DD HH24:00')",
         )
     } else {
-        ("DATE(captured_at)", "DATE(captured_at)::text")
+        ("DATE(effective_date)", "DATE(effective_date)::text")
     };
 
     let sql = format!(
         r#"WITH ordered_snapshots AS (
-               SELECT captured_at,
-                      views,
-                      LAG(views) OVER (PARTITION BY post_id ORDER BY captured_at) AS prev_views
-               FROM engagement_snapshots
-               WHERE views IS NOT NULL
+               SELECT es.captured_at,
+                      es.post_id,
+                      es.views,
+                      LAG(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_views,
+                      p.timestamp AS post_timestamp
+               FROM engagement_snapshots es
+               JOIN posts p ON p.id = es.post_id
+               WHERE es.views IS NOT NULL
+           ),
+           with_deltas AS (
+               SELECT CASE
+                          WHEN prev_views IS NULL THEN post_timestamp
+                          ELSE captured_at
+                      END AS effective_date,
+                      GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
+               FROM ordered_snapshots
            )
            SELECT {date_format} AS date,
-                  SUM(GREATEST(views - COALESCE(prev_views, 0), 0))::bigint AS total_views
-           FROM ordered_snapshots
+                  SUM(view_delta)::bigint AS total_views
+           FROM with_deltas
            {since_clause}
            GROUP BY {date_expr}
            ORDER BY date"#,
