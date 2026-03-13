@@ -1,7 +1,7 @@
 use crate::db;
 use crate::state::AppState;
-use axum::{Json, extract::State};
-use serde::Serialize;
+use axum::{Json, extract::Query, extract::State};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 pub struct AnalyticsData {
@@ -25,6 +25,49 @@ pub struct EngagementPoint {
     pub likes: i64,
     pub replies: i64,
     pub reposts: i64,
+}
+
+#[derive(Serialize)]
+pub struct ViewsPoint {
+    pub date: String,
+    pub views: i64,
+}
+
+#[derive(Deserialize)]
+pub struct ViewsQuery {
+    pub since: Option<String>,
+}
+
+pub async fn get_views(
+    State(state): State<AppState>,
+    Query(query): Query<ViewsQuery>,
+) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
+    let since_clause = if let Some(ref since) = query.since {
+        format!("WHERE timestamp >= '{}'::timestamptz", since.replace('\'', ""))
+    } else {
+        String::new()
+    };
+
+    let sql = format!(
+        r#"SELECT DATE(timestamp)::text as date, SUM(views)::bigint as total_views
+           FROM posts
+           {}
+           GROUP BY DATE(timestamp)
+           ORDER BY date"#,
+        since_clause
+    );
+
+    let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let points: Vec<ViewsPoint> = rows
+        .into_iter()
+        .map(|(date, views)| ViewsPoint { date, views })
+        .collect();
+
+    Ok(Json(points))
 }
 
 pub async fn get_analytics(

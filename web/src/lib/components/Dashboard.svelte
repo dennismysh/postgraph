@@ -1,16 +1,78 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
-  import { api, type AnalyticsData, type AnalyzeStatus } from '$lib/api';
+  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint } from '$lib/api';
 
   let analytics: AnalyticsData | null = $state(null);
   let engagementCanvas: HTMLCanvasElement = $state(null!);
   let topicsCanvas: HTMLCanvasElement = $state(null!);
+  let viewsCanvas: HTMLCanvasElement = $state(null!);
   let engagementChart: Chart | null = $state(null);
   let topicsChart: Chart | null = $state(null);
+  let viewsChart: Chart | null = $state(null);
+  let viewsData: ViewsPoint[] = $state([]);
   let analyzeStatus: AnalyzeStatus | null = $state(null);
   let analyzing = $state(false);
   let statusInterval: ReturnType<typeof setInterval> | null = null;
+
+  const timeRanges = [
+    { label: 'Last 24 Hours', value: '24h' },
+    { label: 'Last 7 Days', value: '7d' },
+    { label: 'Last 2 Weeks', value: '14d' },
+    { label: 'Last 30 Days', value: '30d' },
+    { label: 'Last 2 Months', value: '60d' },
+    { label: 'Last 3 Months', value: '90d' },
+    { label: 'Last 6 Months', value: '180d' },
+    { label: 'Last 9 Months', value: '270d' },
+    { label: 'Last 12 Months', value: '365d' },
+    { label: 'All Time', value: 'all' },
+  ];
+  let selectedRange = $state('30d');
+
+  function getSinceDate(range: string): string | undefined {
+    if (range === 'all') return undefined;
+    const now = new Date();
+    if (range === '24h') {
+      now.setHours(now.getHours() - 24);
+    } else {
+      const days = parseInt(range);
+      now.setDate(now.getDate() - days);
+    }
+    return now.toISOString();
+  }
+
+  async function loadViews() {
+    const since = getSinceDate(selectedRange);
+    viewsData = await api.getViews(since);
+    renderViewsChart();
+  }
+
+  function renderViewsChart() {
+    if (viewsChart) viewsChart.destroy();
+    if (!viewsCanvas) return;
+
+    viewsChart = new Chart(viewsCanvas, {
+      type: 'line',
+      data: {
+        labels: viewsData.map(v => v.date),
+        datasets: [{
+          label: 'Views',
+          data: viewsData.map(v => v.views),
+          borderColor: '#f58231',
+          backgroundColor: 'rgba(245, 130, 49, 0.1)',
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#ccc' } } },
+        scales: {
+          x: { ticks: { color: '#888' }, grid: { color: '#222' } },
+          y: { ticks: { color: '#888' }, grid: { color: '#222' } },
+        },
+      },
+    });
+  }
 
   function getUnanalyzedCount(): number {
     return analytics ? analytics.total_posts - analytics.analyzed_posts : 0;
@@ -78,6 +140,9 @@
       },
     });
 
+    // Views over time
+    await loadViews();
+
     // Topics breakdown
     topicsChart = new Chart(topicsCanvas, {
       type: 'bar',
@@ -135,6 +200,22 @@
         {/if}
       </div>
     {/if}
+
+    <div class="chart-card views-card">
+      <div class="chart-header">
+        <h3>Views Over Time</h3>
+        <div class="time-filters">
+          {#each timeRanges as range}
+            <button
+              class="filter-btn"
+              class:active={selectedRange === range.value}
+              onclick={() => { selectedRange = range.value; loadViews(); }}
+            >{range.label}</button>
+          {/each}
+        </div>
+      </div>
+      <canvas bind:this={viewsCanvas}></canvas>
+    </div>
 
     <div class="charts">
       <div class="chart-card">
@@ -204,4 +285,35 @@
     padding: 1rem;
   }
   h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+  .views-card { margin-bottom: 1rem; }
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .chart-header h3 { margin: 0; }
+  .time-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .filter-btn {
+    background: #222;
+    color: #888;
+    border: 1px solid #333;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .filter-btn:hover { color: #ccc; border-color: #555; }
+  .filter-btn.active {
+    background: #4363d8;
+    color: white;
+    border-color: #4363d8;
+  }
 </style>
