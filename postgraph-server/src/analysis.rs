@@ -9,7 +9,7 @@ fn analysis_batch_size() -> i64 {
     std::env::var("ANALYSIS_BATCH_SIZE")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(50)
+        .unwrap_or(16)
 }
 
 pub async fn run_analysis(pool: &PgPool, mercury: &MercuryClient) -> Result<u32, AppError> {
