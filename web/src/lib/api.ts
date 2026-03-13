@@ -85,10 +85,19 @@ export interface SyncResult {
   metrics_refreshed: number;
 }
 
+export interface SyncStartResult {
+  started: boolean;
+  message: string;
+}
+
+export interface SyncStatus {
+  running: boolean;
+  message: string;
+}
+
 export interface ReanalyzeResult {
-  posts_reset: number;
-  posts_analyzed: number;
-  edges_computed: number;
+  started: boolean;
+  message: string;
 }
 
 export interface AnalyzeStartResult {
@@ -119,8 +128,9 @@ export const api = {
       const body = await r.json().catch(() => ({ error: `Sync failed (${r.status})` }));
       throw new Error(body.error ?? `Sync failed (${r.status})`);
     }
-    return r.json() as Promise<SyncResult>;
+    return r.json() as Promise<SyncStartResult>;
   }),
+  getSyncStatus: () => fetchApi<SyncStatus>('/api/sync/status'),
   triggerReanalyze: () => fetch('/api/reanalyze', {
     method: 'POST',
   }).then(async r => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { filters, resetFilters } from '$lib/stores/filters';
   import { graphData, loadGraph } from '$lib/stores/graph';
   import { api } from '$lib/api';
@@ -15,8 +16,15 @@
 
   let syncing = $state(false);
   let syncStatus = $state('');
+  let syncInterval: ReturnType<typeof setInterval> | null = null;
   let reanalyzing = $state(false);
   let reanalyzeStatus = $state('');
+  let reanalyzeInterval: ReturnType<typeof setInterval> | null = null;
+
+  onDestroy(() => {
+    if (syncInterval) clearInterval(syncInterval);
+    if (reanalyzeInterval) clearInterval(reanalyzeInterval);
+  });
 
   function toggleTopic(topic: string) {
     filters.update(f => {
@@ -29,17 +37,39 @@
 
   async function handleSync() {
     syncing = true;
-    syncStatus = 'Syncing...';
+    syncStatus = 'Starting sync...';
     try {
       const result = await api.triggerSync();
-      syncStatus = `Done! ${result.posts_synced} synced, ${result.metrics_refreshed} refreshed.`;
-      await loadGraph();
+      if (!result.started) {
+        syncStatus = result.message;
+        syncing = false;
+        return;
+      }
+      pollSyncStatus();
     } catch (e) {
       syncStatus = `Failed: ${e instanceof Error ? e.message : 'Unknown error'}`;
-    } finally {
       syncing = false;
       setTimeout(() => { syncStatus = ''; }, 5000);
     }
+  }
+
+  function pollSyncStatus() {
+    if (syncInterval) clearInterval(syncInterval);
+    syncInterval = setInterval(async () => {
+      try {
+        const status = await api.getSyncStatus();
+        syncStatus = status.message;
+        if (!status.running) {
+          syncing = false;
+          if (syncInterval) clearInterval(syncInterval);
+          syncInterval = null;
+          await loadGraph();
+          setTimeout(() => { syncStatus = ''; }, 5000);
+        }
+      } catch {
+        // Keep polling on transient errors
+      }
+    }, 2000);
   }
 
   async function handleReanalyze() {
@@ -48,14 +78,41 @@
     reanalyzeStatus = 'Reanalyzing...';
     try {
       const result = await api.triggerReanalyze();
-      reanalyzeStatus = `Done! ${result.posts_analyzed} posts analyzed, ${result.edges_computed} edges computed.`;
-      await loadGraph();
+      if (!result.started) {
+        reanalyzeStatus = result.message;
+        reanalyzing = false;
+        return;
+      }
+      reanalyzeStatus = result.message;
+      pollReanalyzeStatus();
     } catch (e) {
       reanalyzeStatus = `Failed: ${e instanceof Error ? e.message : 'Unknown error'}`;
-    } finally {
       reanalyzing = false;
       setTimeout(() => { reanalyzeStatus = ''; }, 5000);
     }
+  }
+
+  function pollReanalyzeStatus() {
+    if (reanalyzeInterval) clearInterval(reanalyzeInterval);
+    reanalyzeInterval = setInterval(async () => {
+      try {
+        const status = await api.getAnalyzeStatus();
+        if (status.total > 0) {
+          const pct = Math.round((status.analyzed / status.total) * 100);
+          reanalyzeStatus = `Reanalyzing... ${status.analyzed}/${status.total} (${pct}%)`;
+        }
+        if (!status.running) {
+          reanalyzing = false;
+          reanalyzeStatus = 'Reanalysis complete!';
+          if (reanalyzeInterval) clearInterval(reanalyzeInterval);
+          reanalyzeInterval = null;
+          await loadGraph();
+          setTimeout(() => { reanalyzeStatus = ''; }, 5000);
+        }
+      } catch {
+        // Keep polling on transient errors
+      }
+    }, 3000);
   }
 </script>
 

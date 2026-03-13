@@ -73,8 +73,12 @@ pub struct PostInsights {
 
 impl ThreadsClient {
     pub fn new(access_token: String) -> Self {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("failed to build HTTP client");
         Self {
-            client: Client::new(),
+            client,
             access_token: RwLock::new(access_token),
         }
     }

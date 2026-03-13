@@ -80,6 +80,8 @@ async fn main() {
         analysis_running: Arc::new(AtomicBool::new(false)),
         analysis_progress: Arc::new(AtomicU32::new(0)),
         analysis_total: Arc::new(AtomicU32::new(0)),
+        sync_running: Arc::new(AtomicBool::new(false)),
+        sync_message: Arc::new(tokio::sync::RwLock::new(String::new())),
     };
 
     // Spawn background sync task (first run after 30s delay, then every 15 min)
@@ -172,6 +174,7 @@ async fn main() {
         .route("/api/analytics", get(routes::analytics::get_analytics))
         .route("/api/analytics/views", get(routes::analytics::get_views))
         .route("/api/sync", post(routes::sync::trigger_sync))
+        .route("/api/sync/status", get(routes::sync::sync_status))
         .route("/api/reanalyze", post(routes::reanalyze::trigger_reanalyze))
         .route("/api/analyze", post(routes::analyze::start_analyze))
         .route("/api/analyze/status", get(routes::analyze::analyze_status))
