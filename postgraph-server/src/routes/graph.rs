@@ -31,38 +31,46 @@ pub struct GraphData {
 pub async fn get_graph(
     State(state): State<AppState>,
 ) -> Result<Json<GraphData>, axum::http::StatusCode> {
-    let posts = db::get_all_posts(&state.pool)
-        .await
-        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Run all three queries in parallel
+    let (posts_result, edges_result, topics_result) = tokio::join!(
+        db::get_posts_for_graph(&state.pool),
+        db::get_all_edges(&state.pool),
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT pt.post_id, t.name FROM post_topics pt JOIN topics t ON pt.topic_id = t.id",
+        )
+        .fetch_all(&state.pool),
+    );
 
-    let edges = db::get_all_edges(&state.pool)
-        .await
-        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    let posts = posts_result.map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    let edges = edges_result.map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    let all_post_topics =
+        topics_result.map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Fetch topics for each post
-    let all_post_topics: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
-        "SELECT pt.post_id, t.name FROM post_topics pt JOIN topics t ON pt.topic_id = t.id",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Build a HashMap for O(1) topic lookups instead of O(n) per post
+    let mut topic_map: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    for (pid, name) in &all_post_topics {
+        topic_map
+            .entry(pid.as_str())
+            .or_default()
+            .push(name.as_str());
+    }
 
     let nodes: Vec<GraphNode> = posts
         .iter()
         .filter(|p| p.analyzed_at.is_some())
         .map(|p| {
-            let topics: Vec<String> = all_post_topics
-                .iter()
-                .filter(|(pid, _)| pid == &p.id)
-                .map(|(_, name)| name.clone())
-                .collect();
+            let topics: Vec<String> = topic_map
+                .get(p.id.as_str())
+                .map(|names| names.iter().map(|s| s.to_string()).collect())
+                .unwrap_or_default();
 
             let engagement = (p.likes + p.replies_count + p.reposts + p.quotes) as f32;
             let size = (engagement + 1.0).ln().max(0.0) + 1.0;
 
             GraphNode {
                 id: p.id.clone(),
-                label: p.text.as_deref().unwrap_or("").chars().take(80).collect(),
+                label: p.text_preview.clone().unwrap_or_default(),
                 size,
                 sentiment: p.sentiment,
                 topics,
