@@ -57,8 +57,12 @@ pub struct AnalysisResponse {
 
 impl MercuryClient {
     pub fn new(api_key: String, api_url: String) -> Self {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .expect("failed to build HTTP client");
         Self {
-            client: Client::new(),
+            client,
             api_key,
             api_url,
         }

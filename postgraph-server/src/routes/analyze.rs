@@ -53,7 +53,7 @@ pub async fn start_analyze(
     let bg_state = state.clone();
     tokio::spawn(async move {
         let mut total_analyzed: u32 = 0;
-        let mut consecutive_failures = 0;
+        let mut consecutive_failures: u32 = 0;
 
         loop {
             match analysis::run_analysis(&bg_state.pool, &bg_state.mercury).await {
@@ -65,15 +65,21 @@ pub async fn start_analyze(
                         .analysis_progress
                         .store(total_analyzed, Ordering::SeqCst);
                     info!("Analysis progress: {total_analyzed}/{unanalyzed_count}");
+                    // Brief pause between batches to avoid rate-limiting
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 }
                 Err(e) => {
                     consecutive_failures += 1;
                     tracing::error!("Analysis batch failed (attempt {consecutive_failures}): {e}");
-                    if consecutive_failures >= 3 {
-                        tracing::error!("Stopping analysis after 3 consecutive failures");
+                    if consecutive_failures >= 10 {
+                        tracing::error!("Stopping analysis after 10 consecutive failures");
                         break;
                     }
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    // Exponential backoff: 2s, 4s, 8s, 16s, 32s, ...
+                    let delay =
+                        std::time::Duration::from_secs(2u64.pow(consecutive_failures.min(6)));
+                    info!("Retrying in {}s...", delay.as_secs());
+                    tokio::time::sleep(delay).await;
                 }
             }
         }
