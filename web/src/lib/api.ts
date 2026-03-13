@@ -72,6 +72,7 @@ export interface PostDetail {
   replies_count: number;
   reposts: number;
   quotes: number;
+  shares: number;
   sentiment: number | null;
   topics: string[];
   engagement_rate: number;
