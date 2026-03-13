@@ -1,0 +1,89 @@
+use axum::{extract::State, Json};
+use serde::Serialize;
+use crate::db;
+use crate::state::AppState;
+
+#[derive(Serialize)]
+pub struct AnalyticsData {
+    pub total_posts: usize,
+    pub analyzed_posts: usize,
+    pub total_topics: usize,
+    pub topics: Vec<TopicSummary>,
+    pub engagement_over_time: Vec<EngagementPoint>,
+}
+
+#[derive(Serialize)]
+pub struct TopicSummary {
+    pub name: String,
+    pub post_count: i64,
+    pub avg_engagement: f64,
+}
+
+#[derive(Serialize)]
+pub struct EngagementPoint {
+    pub date: String,
+    pub likes: i64,
+    pub replies: i64,
+    pub reposts: i64,
+}
+
+pub async fn get_analytics(
+    State(state): State<AppState>,
+) -> Result<Json<AnalyticsData>, axum::http::StatusCode> {
+    let posts = db::get_all_posts(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let topics = db::get_all_topics(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let topic_summaries: Vec<TopicSummary> = sqlx::query_as::<_, (String, i64, f64)>(
+        r#"SELECT t.name, COUNT(pt.post_id) as post_count,
+           AVG(p.likes + p.replies_count + p.reposts + p.quotes)::float8 as avg_engagement
+           FROM topics t
+           JOIN post_topics pt ON t.id = pt.topic_id
+           JOIN posts p ON pt.post_id = p.id
+           GROUP BY t.name
+           ORDER BY post_count DESC"#,
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
+    .into_iter()
+    .map(|(name, count, avg)| TopicSummary {
+        name,
+        post_count: count,
+        avg_engagement: avg,
+    })
+    .collect();
+
+    let engagement_over_time: Vec<EngagementPoint> = sqlx::query_as::<_, (String, i64, i64, i64)>(
+        r#"SELECT DATE(captured_at)::text as date,
+           SUM(likes)::bigint, SUM(replies_count)::bigint, SUM(reposts)::bigint
+           FROM engagement_snapshots
+           GROUP BY DATE(captured_at)
+           ORDER BY date"#,
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
+    .into_iter()
+    .map(|(date, likes, replies, reposts)| EngagementPoint {
+        date,
+        likes,
+        replies,
+        reposts,
+    })
+    .collect();
+
+    let analyzed_count = posts.iter().filter(|p| p.analyzed_at.is_some()).count();
+
+    Ok(Json(AnalyticsData {
+        total_posts: posts.len(),
+        analyzed_posts: analyzed_count,
+        total_topics: topics.len(),
+        topics: topic_summaries,
+        engagement_over_time,
+    }))
+}
