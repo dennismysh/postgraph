@@ -5,5 +5,9 @@ web/node_modules
 web/.svelte-kit
 web/build
 
+# Root-level npm artifacts (frontend lives in web/)
+/package-lock.json
+/node_modules
+
 # Local Netlify folder
 .netlify
