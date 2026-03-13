@@ -1,3 +1,6 @@
+mod db;
+mod types;
+
 use axum::{Router, routing::get};
 use shuttle_axum::ShuttleAxum;
 use sqlx::PgPool;

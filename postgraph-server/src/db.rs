@@ -1,0 +1,177 @@
+use sqlx::PgPool;
+use crate::types::*;
+
+// -- Posts --
+
+pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO posts (id, text, media_type, media_url, timestamp, permalink, likes, replies_count, reposts, quotes, synced_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             likes = EXCLUDED.likes,
+             replies_count = EXCLUDED.replies_count,
+             reposts = EXCLUDED.reposts,
+             quotes = EXCLUDED.quotes,
+             synced_at = NOW()"#,
+    )
+    .bind(&post.id)
+    .bind(&post.text)
+    .bind(&post.media_type)
+    .bind(&post.media_url)
+    .bind(post.timestamp)
+    .bind(&post.permalink)
+    .bind(post.likes)
+    .bind(post.replies_count)
+    .bind(post.reposts)
+    .bind(post.quotes)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_unanalyzed_posts(pool: &PgPool, limit: i64) -> sqlx::Result<Vec<Post>> {
+    sqlx::query_as::<_, Post>(
+        "SELECT * FROM posts WHERE analyzed_at IS NULL ORDER BY timestamp DESC LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_all_posts(pool: &PgPool) -> sqlx::Result<Vec<Post>> {
+    sqlx::query_as::<_, Post>("SELECT * FROM posts ORDER BY timestamp DESC")
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn mark_post_analyzed(
+    pool: &PgPool,
+    post_id: &str,
+    sentiment: f32,
+) -> sqlx::Result<()> {
+    sqlx::query("UPDATE posts SET analyzed_at = NOW(), sentiment = $1 WHERE id = $2")
+        .bind(sentiment)
+        .bind(post_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// -- Topics --
+
+pub async fn upsert_topic(pool: &PgPool, name: &str, description: &str) -> sqlx::Result<Topic> {
+    sqlx::query_as::<_, Topic>(
+        r#"INSERT INTO topics (name, description)
+           VALUES ($1, $2)
+           ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description
+           RETURNING *"#,
+    )
+    .bind(name)
+    .bind(description)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_all_topics(pool: &PgPool) -> sqlx::Result<Vec<Topic>> {
+    sqlx::query_as::<_, Topic>("SELECT * FROM topics ORDER BY name")
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn upsert_post_topic(
+    pool: &PgPool,
+    post_id: &str,
+    topic_id: uuid::Uuid,
+    weight: f32,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO post_topics (post_id, topic_id, weight)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (post_id, topic_id) DO UPDATE SET weight = EXCLUDED.weight"#,
+    )
+    .bind(post_id)
+    .bind(topic_id)
+    .bind(weight)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+// -- Edges --
+
+pub async fn upsert_edge(pool: &PgPool, edge: &PostEdge) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO post_edges (source_post_id, target_post_id, edge_type, weight)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (source_post_id, target_post_id, edge_type)
+           DO UPDATE SET weight = EXCLUDED.weight"#,
+    )
+    .bind(&edge.source_post_id)
+    .bind(&edge.target_post_id)
+    .bind(&edge.edge_type)
+    .bind(edge.weight)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_all_edges(pool: &PgPool) -> sqlx::Result<Vec<PostEdge>> {
+    sqlx::query_as::<_, PostEdge>("SELECT * FROM post_edges WHERE weight >= 0.1")
+        .fetch_all(pool)
+        .await
+}
+
+// -- Engagement Snapshots --
+
+pub async fn insert_engagement_snapshot(
+    pool: &PgPool,
+    post_id: &str,
+    likes: i32,
+    replies_count: i32,
+    reposts: i32,
+    quotes: i32,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO engagement_snapshots (post_id, likes, replies_count, reposts, quotes)
+           VALUES ($1, $2, $3, $4, $5)"#,
+    )
+    .bind(post_id)
+    .bind(likes)
+    .bind(replies_count)
+    .bind(reposts)
+    .bind(quotes)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_engagement_history(
+    pool: &PgPool,
+    post_id: &str,
+) -> sqlx::Result<Vec<EngagementSnapshot>> {
+    sqlx::query_as::<_, EngagementSnapshot>(
+        "SELECT * FROM engagement_snapshots WHERE post_id = $1 ORDER BY captured_at",
+    )
+    .bind(post_id)
+    .fetch_all(pool)
+    .await
+}
+
+// -- Sync State --
+
+pub async fn get_sync_state(pool: &PgPool) -> sqlx::Result<SyncState> {
+    sqlx::query_as::<_, SyncState>("SELECT * FROM sync_state WHERE id = 1")
+        .fetch_one(pool)
+        .await
+}
+
+pub async fn update_sync_state(
+    pool: &PgPool,
+    cursor: Option<&str>,
+) -> sqlx::Result<()> {
+    sqlx::query("UPDATE sync_state SET last_sync_cursor = $1, last_sync_at = NOW() WHERE id = 1")
+        .bind(cursor)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
