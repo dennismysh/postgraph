@@ -9,6 +9,10 @@
   let container: HTMLDivElement = $state(null!);
   let sigma: Sigma | null = $state(null);
 
+  function isMobile(): boolean {
+    return typeof window !== 'undefined' && window.innerWidth < 768;
+  }
+
   const COLORS = [
     '#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',
     '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990',
@@ -23,10 +27,14 @@
         louvain.assign(graph);
       }
 
-      // Assign colors by community
+      // Assign colors by community and scale node sizes for mobile
+      const mobile = isMobile();
+      const sizeMultiplier = mobile ? 3 : 1;
       graph.forEachNode((node, attrs) => {
         const community = (attrs as any).community || 0;
         graph.setNodeAttribute(node, 'color', COLORS[community % COLORS.length]);
+        const baseSize = (attrs as any).size || 1;
+        graph.setNodeAttribute(node, 'size', baseSize * sizeMultiplier);
       });
 
       // Run ForceAtlas2 layout
@@ -35,6 +43,9 @@
       sigma = new Sigma(graph, container, {
         renderEdgeLabels: false,
         defaultEdgeType: 'line',
+        labelColor: { color: '#eeeeee' },
+        labelSize: mobile ? 12 : 14,
+        labelRenderedSizeThreshold: mobile ? 4 : 8,
       });
 
       sigma.on('clickNode', ({ node }) => {
