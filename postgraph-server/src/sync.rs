@@ -10,10 +10,7 @@ use crate::types::Post;
 
 /// Refresh insights metrics for all existing posts in the database.
 /// Returns the number of posts successfully updated.
-pub async fn refresh_all_metrics(
-    pool: &PgPool,
-    client: &ThreadsClient,
-) -> Result<u32, AppError> {
+pub async fn refresh_all_metrics(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppError> {
     let post_ids = db::get_all_post_ids(pool).await?;
     let total = post_ids.len();
     info!("Refreshing metrics for {total} existing posts");
@@ -84,7 +81,12 @@ pub async fn refresh_all_metrics(
 }
 
 fn parse_threads_timestamp(ts: &str) -> DateTime<Utc> {
+    // Try RFC3339 first (e.g. "2026-02-19T12:34:56+00:00")
     DateTime::parse_from_rfc3339(ts)
+        .or_else(|_| {
+            // Threads API returns "+0000" without colon, which isn't valid RFC3339
+            DateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S%z")
+        })
         .map(|dt| dt.with_timezone(&Utc))
         .unwrap_or_else(|_| Utc::now())
 }
