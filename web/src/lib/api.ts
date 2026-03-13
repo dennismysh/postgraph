@@ -1,14 +1,6 @@
-import { env } from '$env/dynamic/public';
-
-const API_URL = env.PUBLIC_API_URL || 'http://localhost:8000';
-const API_KEY = env.PUBLIC_API_KEY || '';
-
 async function fetchApi<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: {
-      'Authorization': `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json',
-    },
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
@@ -76,8 +68,7 @@ export const api = {
   getGraph: () => fetchApi<GraphData>('/api/graph'),
   getPosts: () => fetchApi<Post[]>('/api/posts'),
   getAnalytics: () => fetchApi<AnalyticsData>('/api/analytics'),
-  triggerSync: () => fetch(`${API_URL}/api/sync`, {
+  triggerSync: () => fetch('/api/sync', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${API_KEY}` },
   }).then(r => r.json() as Promise<SyncResult>),
 };
