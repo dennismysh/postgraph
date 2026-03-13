@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
-import Graph from 'graphology';
+import { MultiGraph } from 'graphology';
+import type Graph from 'graphology';
 import { api, type GraphData } from '$lib/api';
 
 export const graphData = writable<GraphData | null>(null);
@@ -15,7 +16,7 @@ export async function loadGraph() {
     const data = await api.getGraph();
     graphData.set(data);
 
-    const graph = new Graph();
+    const graph = new MultiGraph();
     for (const node of data.nodes) {
       graph.addNode(node.id, {
         label: node.label,
