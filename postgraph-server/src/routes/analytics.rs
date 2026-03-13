@@ -43,11 +43,14 @@ pub async fn get_views(
     State(state): State<AppState>,
     Query(query): Query<ViewsQuery>,
 ) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
-    // Show views distributed by post publication date (posts.timestamp),
-    // using the latest snapshot views for each post.
+    // Compute view *deltas* between consecutive engagement snapshots so that
+    // views are attributed to when they were received, not when the post was
+    // published.  The CTE computes LAG over ALL snapshots (no date filter) so
+    // that the first delta inside the requested period is accurate, then the
+    // outer query filters by captured_at.
     let since_clause = if let Some(ref since) = query.since {
         format!(
-            "WHERE p.timestamp >= '{}'::timestamptz",
+            "WHERE captured_at >= '{}'::timestamptz",
             since.replace('\'', "")
         )
     } else {
@@ -57,22 +60,24 @@ pub async fn get_views(
     let is_hourly = query.grouping.as_deref() == Some("hourly");
     let (date_expr, date_format) = if is_hourly {
         (
-            "DATE_TRUNC('hour', p.timestamp)",
-            "TO_CHAR(DATE_TRUNC('hour', p.timestamp), 'YYYY-MM-DD HH24:00')",
+            "DATE_TRUNC('hour', captured_at)",
+            "TO_CHAR(DATE_TRUNC('hour', captured_at), 'YYYY-MM-DD HH24:00')",
         )
     } else {
-        ("DATE(p.timestamp)", "DATE(p.timestamp)::text")
+        ("DATE(captured_at)", "DATE(captured_at)::text")
     };
 
     let sql = format!(
-        r#"SELECT {date_format} as date, SUM(COALESCE(latest.views, p.views))::bigint as total_views
-           FROM posts p
-           LEFT JOIN LATERAL (
-               SELECT views FROM engagement_snapshots es
-               WHERE es.post_id = p.id AND es.views IS NOT NULL
-               ORDER BY es.captured_at DESC
-               LIMIT 1
-           ) latest ON true
+        r#"WITH ordered_snapshots AS (
+               SELECT captured_at,
+                      views,
+                      LAG(views) OVER (PARTITION BY post_id ORDER BY captured_at) AS prev_views
+               FROM engagement_snapshots
+               WHERE views IS NOT NULL
+           )
+           SELECT {date_format} AS date,
+                  SUM(GREATEST(views - COALESCE(prev_views, 0), 0))::bigint AS total_views
+           FROM ordered_snapshots
            {since_clause}
            GROUP BY {date_expr}
            ORDER BY date"#,
