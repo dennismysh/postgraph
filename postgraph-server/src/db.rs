@@ -12,6 +12,7 @@ pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
              media_type = COALESCE(EXCLUDED.media_type, posts.media_type),
              media_url = COALESCE(EXCLUDED.media_url, posts.media_url),
              permalink = COALESCE(EXCLUDED.permalink, posts.permalink),
+             timestamp = EXCLUDED.timestamp,
              synced_at = NOW()"#,
     )
     .bind(&post.id)
@@ -106,10 +107,9 @@ pub async fn reset_all_analysis(pool: &PgPool) -> sqlx::Result<u64> {
 }
 
 pub async fn get_all_post_ids(pool: &PgPool) -> sqlx::Result<Vec<String>> {
-    let rows: Vec<(String,)> =
-        sqlx::query_as("SELECT id FROM posts ORDER BY timestamp DESC")
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(String,)> = sqlx::query_as("SELECT id FROM posts ORDER BY timestamp DESC")
+        .fetch_all(pool)
+        .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
