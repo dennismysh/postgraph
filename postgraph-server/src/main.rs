@@ -1,8 +1,10 @@
 mod analysis;
+mod auth;
 mod db;
 mod error;
 mod graph;
 mod mercury;
+mod state;
 mod sync;
 mod threads;
 mod types;
