@@ -61,17 +61,52 @@
     return d.toISOString().slice(0, 10);
   }
 
-  function groupViewsData(data: ViewsPoint[], grouping: 'hourly' | 'daily' | 'weekly'): ViewsPoint[] {
-    if (grouping === 'hourly') {
-      // Data already comes hourly from backend (format: "YYYY-MM-DD HH:00")
-      // Format labels for readability
-      return data.map(point => {
-        const label = point.date.slice(5); // "MM-DD HH:00"
-        return { date: label, views: point.views };
-      });
+  function fillHourlyGaps(data: ViewsPoint[]): ViewsPoint[] {
+    // Build a lookup from the backend data (format: "YYYY-MM-DD HH:00")
+    const lookup = new Map<string, number>();
+    for (const point of data) {
+      lookup.set(point.date, point.views);
     }
 
-    if (grouping === 'daily') return data;
+    // Generate all 24 hours from now back
+    const result: ViewsPoint[] = [];
+    const now = new Date();
+    now.setMinutes(0, 0, 0);
+    for (let i = 23; i >= 0; i--) {
+      const hour = new Date(now.getTime() - i * 3600_000);
+      const key = hour.toISOString().slice(0, 13).replace('T', ' ') + ':00';
+      const label = key.slice(5); // "MM-DD HH:00"
+      result.push({ date: label, views: lookup.get(key) ?? 0 });
+    }
+    return result;
+  }
+
+  function fillDailyGaps(data: ViewsPoint[], range: string): ViewsPoint[] {
+    const lookup = new Map<string, number>();
+    for (const point of data) {
+      lookup.set(point.date, point.views);
+    }
+
+    const days = parseInt(range);
+    const result: ViewsPoint[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today.getTime() - i * 86400_000);
+      const key = d.toISOString().slice(0, 10);
+      result.push({ date: key, views: lookup.get(key) ?? 0 });
+    }
+    return result;
+  }
+
+  function groupViewsData(data: ViewsPoint[], grouping: 'hourly' | 'daily' | 'weekly'): ViewsPoint[] {
+    if (grouping === 'hourly') {
+      return fillHourlyGaps(data);
+    }
+
+    if (grouping === 'daily') {
+      return fillDailyGaps(data, selectedRange);
+    }
 
     const grouped = new Map<string, number>();
     for (const point of data) {
