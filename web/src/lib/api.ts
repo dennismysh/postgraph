@@ -60,6 +60,22 @@ export interface Post {
   sentiment: number | null;
 }
 
+export interface PostDetail {
+  id: string;
+  text: string | null;
+  media_type: string | null;
+  media_url: string | null;
+  timestamp: string;
+  permalink: string | null;
+  likes: number;
+  replies_count: number;
+  reposts: number;
+  quotes: number;
+  sentiment: number | null;
+  topics: string[];
+  engagement_rate: number;
+}
+
 export interface SyncResult {
   posts_synced: number;
   posts_analyzed: number;
@@ -85,6 +101,7 @@ export interface AnalyzeStatus {
 
 export const api = {
   getGraph: () => fetchApi<GraphData>('/api/graph'),
+  getPost: (id: string) => fetchApi<PostDetail>(`/api/posts/${id}`),
   getPosts: () => fetchApi<Post[]>('/api/posts'),
   getAnalytics: () => fetchApi<AnalyticsData>('/api/analytics'),
   triggerSync: () => fetch('/api/sync', {
