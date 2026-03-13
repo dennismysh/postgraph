@@ -14,6 +14,8 @@
   let recentPosts: Post[] = $state([]);
   let analyzeStatus: AnalyzeStatus | null = $state(null);
   let analyzing = $state(false);
+  let syncing = $state(false);
+  let syncStatus = $state('');
   let statusInterval: ReturnType<typeof setInterval> | null = null;
 
   const timeRanges = [
@@ -42,6 +44,38 @@
     return now.toISOString();
   }
 
+  function getGrouping(range: string): 'daily' | 'weekly' {
+    // Daily for short ranges, weekly for 30d+
+    if (range === '24h' || range === '7d' || range === '14d') return 'daily';
+    return 'weekly';
+  }
+
+  function getWeekStart(dateStr: string): string {
+    const d = new Date(dateStr + 'T00:00:00');
+    const day = d.getDay();
+    d.setDate(d.getDate() - day); // Sunday start
+    return d.toISOString().slice(0, 10);
+  }
+
+  function groupViewsData(data: ViewsPoint[], grouping: 'daily' | 'weekly'): ViewsPoint[] {
+    if (grouping === 'daily') return data;
+
+    const grouped = new Map<string, number>();
+    for (const point of data) {
+      const key = getWeekStart(point.date);
+      grouped.set(key, (grouped.get(key) ?? 0) + point.views);
+    }
+
+    return [...grouped.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, views]) => {
+        // Format as "Week of Mar 1" for readability
+        const d = new Date(date + 'T00:00:00');
+        const label = `Week of ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        return { date: label, views };
+      });
+  }
+
   async function loadViews() {
     const since = getSinceDate(selectedRange);
     viewsData = await api.getViews(since);
@@ -53,13 +87,16 @@
     if (viewsChart) viewsChart.destroy();
     if (!viewsCanvas) return;
 
+    const grouping = getGrouping(selectedRange);
+    const chartData = groupViewsData(viewsData, grouping);
+
     viewsChart = new Chart(viewsCanvas, {
       type: 'line',
       data: {
-        labels: viewsData.map(v => v.date),
+        labels: chartData.map(v => v.date),
         datasets: [{
           label: 'Views',
-          data: viewsData.map(v => v.views),
+          data: chartData.map(v => v.views),
           borderColor: '#f58231',
           backgroundColor: 'rgba(245, 130, 49, 0.1)',
           fill: true,
@@ -105,6 +142,31 @@
         statusInterval = null;
       }
     }, 3000);
+  }
+
+  async function refreshAll() {
+    const [analyticsResult, postsResult] = await Promise.all([
+      api.getAnalytics(),
+      api.getPosts(),
+    ]);
+    analytics = analyticsResult;
+    recentPosts = postsResult.slice(0, 10);
+    await loadViews();
+  }
+
+  async function handleSync() {
+    syncing = true;
+    syncStatus = 'Syncing...';
+    try {
+      const result = await api.triggerSync();
+      syncStatus = `Done! ${result.posts_synced} posts synced, ${result.posts_analyzed} analyzed, ${result.edges_computed} edges computed.`;
+      await refreshAll();
+    } catch (e) {
+      syncStatus = `Failed: ${e instanceof Error ? e.message : 'Unknown error'}`;
+    } finally {
+      syncing = false;
+      setTimeout(() => { syncStatus = ''; }, 5000);
+    }
   }
 
   onDestroy(() => {
@@ -193,6 +255,14 @@
         <span class="value">{analytics.total_topics}</span>
         <span class="label">Topics</span>
       </div>
+      <div class="sync-actions">
+        <button class="sync-btn" onclick={handleSync} disabled={syncing}>
+          {syncing ? 'Syncing...' : 'Sync'}
+        </button>
+        {#if syncStatus}
+          <span class="sync-status">{syncStatus}</span>
+        {/if}
+      </div>
     </div>
 
     {#if getUnanalyzedCount() > 0 || analyzing}
@@ -214,7 +284,7 @@
 
     <div class="chart-card views-card">
       <div class="chart-header">
-        <h3>Views Over Time</h3>
+        <h3>Views Over Time {#if getGrouping(selectedRange) === 'weekly'}<span class="grouping-label">(weekly)</span>{/if}</h3>
         <div class="time-filters">
           {#each timeRanges as range}
             <button
@@ -288,6 +358,24 @@
   .stat { text-align: center; }
   .value { display: block; font-size: 2rem; font-weight: bold; }
   .label { color: #888; font-size: 0.85rem; }
+  .sync-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+  .sync-btn {
+    background: #2563eb;
+    border: 1px solid #1d4ed8;
+    color: white;
+    padding: 0.4rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .sync-btn:hover:not(:disabled) { background: #1d4ed8; }
+  .sync-status { font-size: 0.75rem; color: #aaa; }
   .analyze-section {
     margin-bottom: 1.5rem;
     padding: 1rem;
@@ -336,6 +424,7 @@
   }
   .topics-container { position: relative; height: 400px; }
   h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+  .grouping-label { font-size: 0.75rem; color: #888; font-weight: normal; }
   .views-card { margin-bottom: 1rem; }
   .chart-container { position: relative; height: 300px; }
   .chart-header {
