@@ -5,10 +5,7 @@ edition.workspace = true
 
 [dependencies]
 axum = "0.8"
-shuttle-axum = "0.51"
-shuttle-runtime = "0.51"
-shuttle-shared-db = { version = "0.51", features = ["postgres", "sqlx"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid", "migrate"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -18,3 +15,4 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

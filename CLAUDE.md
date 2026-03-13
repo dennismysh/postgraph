@@ -8,9 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-- **postgraph-server/** — Rust API server (Shuttle + axum + sqlx)
+- **postgraph-server/** — Rust API server (axum + sqlx + tokio), deployed to Railway
 - **web/** — Svelte frontend (SvelteKit, deployed to Netlify)
-- **Shuttle Postgres** — provisioned automatically by Shuttle
+- **Postgres** — provisioned by Railway
 
 ## Build Commands
 
@@ -33,8 +33,8 @@ cd web && npx svelte-check            # Type check
 
 ### Running locally
 ```bash
-# Backend (requires Shuttle CLI: cargo install cargo-shuttle)
-cargo shuttle run
+# Backend (requires DATABASE_URL set in .env)
+cargo run --package postgraph-server
 
 # Frontend (separate terminal)
 cd web && npm run dev
@@ -43,15 +43,13 @@ cd web && npm run dev
 ## Environment Variables
 
 See `.env.example`. Required:
+- `DATABASE_URL` — Postgres connection string
 - `THREADS_ACCESS_TOKEN` — Threads API long-lived token
 - `MERCURY_API_KEY` — Inception Labs API key
 - `MERCURY_API_URL` — Mercury endpoint (default: https://api.inceptionlabs.ai/v1)
 - `POSTGRAPH_API_KEY` — API key for frontend-to-backend auth
 - `FRONTEND_ORIGIN` — Allowed CORS origin (default: http://localhost:5173)
-
-### Shuttle Secrets (production)
-
-Use `Secrets.toml` (git-ignored) instead of `.env` for Shuttle deployments. See `Secrets.toml.example`.
+- `PORT` — Server port (default: 8000, Railway sets this automatically)
 
 ### Frontend Auth
 

@@ -14,10 +14,10 @@ use axum::{
     Router, middleware,
     routing::{get, post},
 };
-use shuttle_axum::ShuttleAxum;
 use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
@@ -25,8 +25,20 @@ use crate::mercury::MercuryClient;
 use crate::state::AppState;
 use crate::threads::ThreadsClient;
 
-#[shuttle_runtime::main]
-async fn main(#[shuttle_shared_db::Postgres] pool: PgPool) -> ShuttleAxum {
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "postgraph_server=info,tower_http=info".parse().unwrap()),
+        )
+        .init();
+
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let pool = PgPool::connect(&database_url)
+        .await
+        .expect("failed to connect to database");
+
     sqlx::migrate!()
         .run(&pool)
         .await
@@ -94,5 +106,9 @@ async fn main(#[shuttle_shared_db::Postgres] pool: PgPool) -> ShuttleAxum {
         .layer(cors)
         .with_state(state);
 
-    Ok(router.into())
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8000".to_string());
+    let addr = format!("0.0.0.0:{port}");
+    let listener = TcpListener::bind(&addr).await.expect("failed to bind");
+    info!("Listening on {addr}");
+    axum::serve(listener, router).await.expect("server error");
 }

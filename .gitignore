@@ -1,7 +1,9 @@
 /target
 .env
-Secrets.toml
 *.swp
 web/node_modules
 web/.svelte-kit
 web/build
+
+# Local Netlify folder
+.netlify
