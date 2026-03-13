@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Chart from 'chart.js/auto';
   import { api, type AnalyticsData } from '$lib/api';
 
@@ -12,6 +12,9 @@
   onMount(async () => {
     analytics = await api.getAnalytics();
     if (!analytics) return;
+
+    // Wait for Svelte to render the canvas elements inside {#if analytics}
+    await tick();
 
     // Engagement over time
     engagementChart = new Chart(engagementCanvas, {

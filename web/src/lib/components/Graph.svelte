@@ -3,7 +3,7 @@
   import Sigma from 'sigma';
   import forceAtlas2 from 'graphology-layout-forceatlas2';
   import louvain from 'graphology-communities-louvain';
-  import { graphInstance, selectedNode, loading } from '$lib/stores/graph';
+  import { graphInstance, selectedNode, loading, error } from '$lib/stores/graph';
   import type Graph from 'graphology';
 
   let container: HTMLDivElement = $state(null!);
@@ -15,32 +15,38 @@
   ];
 
   function initSigma(graph: Graph) {
-    if (sigma) sigma.kill();
+    try {
+      if (sigma) sigma.kill();
 
-    // Run community detection for coloring
-    louvain.assign(graph);
+      // Run community detection for coloring
+      if (graph.size > 0) {
+        louvain.assign(graph);
+      }
 
-    // Assign colors by community
-    graph.forEachNode((node, attrs) => {
-      const community = (attrs as any).community || 0;
-      graph.setNodeAttribute(node, 'color', COLORS[community % COLORS.length]);
-    });
+      // Assign colors by community
+      graph.forEachNode((node, attrs) => {
+        const community = (attrs as any).community || 0;
+        graph.setNodeAttribute(node, 'color', COLORS[community % COLORS.length]);
+      });
 
-    // Run ForceAtlas2 layout
-    forceAtlas2.assign(graph, { iterations: 100, settings: { gravity: 1 } });
+      // Run ForceAtlas2 layout
+      forceAtlas2.assign(graph, { iterations: 100, settings: { gravity: 1 } });
 
-    sigma = new Sigma(graph, container, {
-      renderEdgeLabels: false,
-      defaultEdgeType: 'line',
-    });
+      sigma = new Sigma(graph, container, {
+        renderEdgeLabels: false,
+        defaultEdgeType: 'line',
+      });
 
-    sigma.on('clickNode', ({ node }) => {
-      selectedNode.set(node);
-    });
+      sigma.on('clickNode', ({ node }) => {
+        selectedNode.set(node);
+      });
 
-    sigma.on('clickStage', () => {
-      selectedNode.set(null);
-    });
+      sigma.on('clickStage', () => {
+        selectedNode.set(null);
+      });
+    } catch (e) {
+      error.set(e instanceof Error ? e.message : 'Failed to render graph');
+    }
   }
 
   const unsubscribe = graphInstance.subscribe((graph) => {
@@ -60,7 +66,10 @@
 
 <div class="graph-container" bind:this={container}>
   {#if $loading}
-    <div class="loading">Loading graph...</div>
+    <div class="overlay">Loading graph...</div>
+  {/if}
+  {#if $error}
+    <div class="overlay error">{$error}</div>
   {/if}
 </div>
 
@@ -68,13 +77,16 @@
   .graph-container {
     width: 100%;
     height: 100%;
+    min-height: 0;
     position: relative;
   }
-  .loading {
+  .overlay {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
     color: #888;
+    z-index: 1;
   }
+  .error { color: #e6194b; }
 </style>

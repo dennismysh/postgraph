@@ -26,8 +26,8 @@
 
 <style>
   .app { display: flex; flex-direction: column; height: 100%; }
-  main { display: flex; flex: 1; overflow: hidden; }
-  .graph-panel { flex: 1; }
+  main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+  .graph-panel { flex: 1; min-height: 0; position: relative; }
   .detail-panel {
     width: 320px;
     padding: 1rem;
