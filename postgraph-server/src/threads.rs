@@ -72,6 +72,23 @@ impl ThreadsClient {
         }
     }
 
+    /// Lightweight connectivity check — fetches the authenticated user's profile.
+    pub async fn health_check(&self) -> Result<(), AppError> {
+        let url = format!(
+            "{}/me?fields=id&access_token={}",
+            BASE_URL, self.access_token
+        );
+        let resp = self.client.get(&url).send().await?;
+        if resp.status() == 429 {
+            return Err(AppError::RateLimited(60));
+        }
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::ThreadsApi(body));
+        }
+        Ok(())
+    }
+
     pub async fn get_user_threads(
         &self,
         cursor: Option<&str>,

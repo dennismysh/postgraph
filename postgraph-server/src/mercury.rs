@@ -68,6 +68,21 @@ impl MercuryClient {
         }
     }
 
+    /// Lightweight connectivity check — lists available models.
+    pub async fn health_check(&self) -> Result<(), AppError> {
+        let resp = self
+            .client
+            .get(format!("{}/models", self.api_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::MercuryApi(body));
+        }
+        Ok(())
+    }
+
     pub async fn analyze_posts(
         &self,
         posts: &[(String, String)], // (id, text)
