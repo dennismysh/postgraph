@@ -6,8 +6,11 @@
 
 <div class="layout">
   <nav>
-    <a href="/" class:active={$page.url.pathname === '/'}>Graph</a>
-    <a href="/analytics" class:active={$page.url.pathname === '/analytics'}>Analytics</a>
+    <div class="nav-links">
+      <a href="/" class:active={$page.url.pathname === '/'}>Graph</a>
+      <a href="/analytics" class:active={$page.url.pathname === '/analytics'}>Analytics</a>
+    </div>
+    <a href="/logout" class="logout">Logout</a>
   </nav>
   <div class="content">
     {@render children()}
@@ -24,9 +27,14 @@
   .layout { display: flex; flex-direction: column; height: 100vh; }
   nav {
     display: flex;
-    gap: 1rem;
+    justify-content: space-between;
+    align-items: center;
     padding: 0.5rem 1rem;
     border-bottom: 1px solid #333;
+  }
+  .nav-links {
+    display: flex;
+    gap: 1rem;
   }
   nav a {
     color: #888;
@@ -35,5 +43,7 @@
     border-radius: 4px;
   }
   nav a.active { color: #fff; background: #333; }
+  .logout { color: #888; font-size: 0.85rem; }
+  .logout:hover { color: #e6194b; }
   .content { flex: 1; overflow: hidden; }
 </style>
