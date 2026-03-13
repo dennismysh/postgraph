@@ -15,6 +15,7 @@ pub struct Post {
     pub replies_count: i32,
     pub reposts: i32,
     pub quotes: i32,
+    pub shares: i32,
     pub sentiment: Option<f32>,
     pub synced_at: DateTime<Utc>,
     pub analyzed_at: Option<DateTime<Utc>>,

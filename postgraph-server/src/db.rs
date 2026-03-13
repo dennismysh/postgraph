@@ -5,14 +5,15 @@ use sqlx::PgPool;
 
 pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
     sqlx::query(
-        r#"INSERT INTO posts (id, text, media_type, media_url, timestamp, permalink, views, likes, replies_count, reposts, quotes, synced_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+        r#"INSERT INTO posts (id, text, media_type, media_url, timestamp, permalink, views, likes, replies_count, reposts, quotes, shares, synced_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
            ON CONFLICT (id) DO UPDATE SET
              views = EXCLUDED.views,
              likes = EXCLUDED.likes,
              replies_count = EXCLUDED.replies_count,
              reposts = EXCLUDED.reposts,
              quotes = EXCLUDED.quotes,
+             shares = EXCLUDED.shares,
              synced_at = NOW()"#,
     )
     .bind(&post.id)
@@ -26,6 +27,7 @@ pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
     .bind(post.replies_count)
     .bind(post.reposts)
     .bind(post.quotes)
+    .bind(post.shares)
     .execute(pool)
     .await?;
     Ok(())

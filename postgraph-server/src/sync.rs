@@ -31,6 +31,7 @@ fn threads_post_to_post(tp: &ThreadsPost) -> Post {
         replies_count: 0,
         reposts: 0,
         quotes: 0,
+        shares: 0,
         sentiment: None,
         synced_at: Utc::now(),
         analyzed_at: None,
@@ -54,13 +55,14 @@ pub async fn run_sync(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppE
             match client.get_post_insights(&tp.id).await {
                 Ok(insights) => {
                     sqlx::query(
-                        "UPDATE posts SET views = $1, likes = $2, replies_count = $3, reposts = $4, quotes = $5 WHERE id = $6",
+                        "UPDATE posts SET views = $1, likes = $2, replies_count = $3, reposts = $4, quotes = $5, shares = $6 WHERE id = $7",
                     )
                     .bind(insights.views)
                     .bind(insights.likes)
                     .bind(insights.replies)
                     .bind(insights.reposts)
                     .bind(insights.quotes)
+                    .bind(insights.shares)
                     .bind(&tp.id)
                     .execute(pool)
                     .await?;

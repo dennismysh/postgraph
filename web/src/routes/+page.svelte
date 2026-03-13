@@ -113,6 +113,10 @@
               <span class="stat-value">{formatNumber(postDetail.quotes)}</span>
               <span class="stat-label">Quotes</span>
             </div>
+            <div class="stat">
+              <span class="stat-value">{formatNumber(postDetail.shares)}</span>
+              <span class="stat-label">Shares</span>
+            </div>
           </div>
 
           <div class="detail-section">
