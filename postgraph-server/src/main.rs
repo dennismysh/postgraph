@@ -174,6 +174,7 @@ async fn main() {
         .route("/api/posts", get(routes::posts::list_posts))
         .route("/api/posts/{id}", get(routes::posts::get_post))
         .route("/api/graph", get(routes::graph::get_graph))
+        .route("/api/graph/tags", get(routes::graph::get_tag_graph))
         .route("/api/analytics", get(routes::analytics::get_analytics))
         .route("/api/analytics/views", get(routes::analytics::get_views))
         .route("/api/sync", post(routes::sync::trigger_sync))

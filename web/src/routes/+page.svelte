@@ -1,29 +1,58 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Graph from '$lib/components/Graph.svelte';
+  import TagGraph from '$lib/components/TagGraph.svelte';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import { loadGraph, selectedNode, graphData, graphInstance } from '$lib/stores/graph';
-  import { api, type PostDetail, type GraphNode } from '$lib/api';
+  import { loadTagGraph, selectedTagNode, tagGraphData } from '$lib/stores/tagGraph';
+  import { api, type PostDetail, type GraphNode, type TagGraphNode } from '$lib/api';
+
+  type GraphMode = 'posts' | 'tags';
+  let graphMode: GraphMode = $state('posts');
 
   let postDetail: PostDetail | null = $state(null);
   let detailLoading = $state(false);
   let detailError: string | null = $state(null);
   let previewNode: GraphNode | null = $state(null);
 
+  // Tag detail
+  let selectedTag: TagGraphNode | null = $state(null);
+
   onMount(() => {
     loadGraph();
   });
 
+  function switchMode(mode: GraphMode) {
+    graphMode = mode;
+    selectedNode.set(null);
+    selectedTagNode.set(null);
+    postDetail = null;
+    previewNode = null;
+    selectedTag = null;
+    if (mode === 'tags') {
+      loadTagGraph();
+    }
+  }
+
   $effect(() => {
     const node = $selectedNode;
     if (node) {
-      // Show preview data from graph immediately
       const data = $graphData;
       previewNode = data?.nodes.find(n => n.id === node) ?? null;
       fetchPostDetail(node);
     } else {
       postDetail = null;
       previewNode = null;
+    }
+  });
+
+  $effect(() => {
+    const nodeId = $selectedTagNode;
+    if (nodeId) {
+      const data = $tagGraphData;
+      selectedTag = data?.nodes.find(n => n.id === nodeId) ?? null;
+    } else {
+      selectedTag = null;
     }
   });
 
@@ -56,15 +85,40 @@
   function closeDetail() {
     selectedNode.set(null);
   }
+
+  function closeTagDetail() {
+    selectedTagNode.set(null);
+  }
 </script>
 
 <div class="app">
   <FilterBar />
+  <div class="graph-mode-bar">
+    <button
+      class="mode-btn"
+      class:active={graphMode === 'posts'}
+      onclick={() => switchMode('posts')}
+    >
+      Posts Graph
+    </button>
+    <button
+      class="mode-btn"
+      class:active={graphMode === 'tags'}
+      onclick={() => switchMode('tags')}
+    >
+      Tags Graph
+    </button>
+  </div>
   <main>
     <div class="graph-panel">
-      <Graph />
+      {#if graphMode === 'posts'}
+        <Graph />
+      {:else}
+        <TagGraph />
+      {/if}
     </div>
-    {#if $selectedNode}
+
+    {#if graphMode === 'posts' && $selectedNode}
       <aside class="detail-panel">
         <div class="detail-header">
           <h2>Post Detail</h2>
@@ -191,6 +245,37 @@
         {/if}
       </aside>
     {/if}
+
+    {#if graphMode === 'tags' && selectedTag}
+      <aside class="detail-panel">
+        <div class="detail-header">
+          <h2>Tag Detail</h2>
+          <button class="close-btn" onclick={closeTagDetail}>&times;</button>
+        </div>
+
+        <div class="tag-name">{selectedTag.label}</div>
+
+        <div class="stats-grid">
+          <div class="stat">
+            <span class="stat-value">{formatNumber(selectedTag.post_count)}</span>
+            <span class="stat-label">Posts</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{formatNumber(selectedTag.total_engagement)}</span>
+            <span class="stat-label">Total Engagement</span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Post IDs</h3>
+          <div class="post-id-list">
+            {#each selectedTag.post_ids as pid}
+              <span class="post-id-chip">{pid.slice(-8)}</span>
+            {/each}
+          </div>
+        </div>
+      </aside>
+    {/if}
   </main>
 </div>
 
@@ -198,6 +283,29 @@
   .app { display: flex; flex-direction: column; height: 100%; }
   main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
   .graph-panel { flex: 1; min-height: 0; position: relative; }
+
+  .graph-mode-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #333;
+    background: #111;
+  }
+  .mode-btn {
+    padding: 0.45rem 1.2rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .mode-btn:hover { color: #ccc; }
+  .mode-btn.active {
+    color: #fff;
+    border-bottom-color: #4363d8;
+  }
+
   .detail-panel {
     width: 360px;
     padding: 1rem;
@@ -363,4 +471,24 @@
     text-decoration: none;
   }
   .permalink:hover { text-decoration: underline; }
+
+  .tag-name {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 1rem;
+  }
+  .post-id-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .post-id-chip {
+    background: #333;
+    color: #aaa;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-family: monospace;
+  }
 </style>
