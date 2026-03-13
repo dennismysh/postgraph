@@ -42,11 +42,11 @@ pub async fn get_views(
     State(state): State<AppState>,
     Query(query): Query<ViewsQuery>,
 ) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
-    // Use engagement_snapshots for time-series views (append-only, survives re-syncs).
-    // Take the MAX views per post per day (latest snapshot), then sum across posts.
+    // Show views distributed by post publication date (posts.timestamp),
+    // using the latest snapshot views for each post.
     let since_clause = if let Some(ref since) = query.since {
         format!(
-            "WHERE captured_at >= '{}'::timestamptz",
+            "WHERE p.timestamp >= '{}'::timestamptz",
             since.replace('\'', "")
         )
     } else {
@@ -54,14 +54,16 @@ pub async fn get_views(
     };
 
     let sql = format!(
-        r#"SELECT date::text, SUM(max_views)::bigint as total_views
-           FROM (
-               SELECT DATE(captured_at) as date, post_id, MAX(views) as max_views
-               FROM engagement_snapshots
-               {}
-               GROUP BY DATE(captured_at), post_id
-           ) sub
-           GROUP BY date
+        r#"SELECT DATE(p.timestamp)::text as date, SUM(COALESCE(latest.views, p.views))::bigint as total_views
+           FROM posts p
+           LEFT JOIN LATERAL (
+               SELECT views FROM engagement_snapshots es
+               WHERE es.post_id = p.id AND es.views IS NOT NULL
+               ORDER BY es.captured_at DESC
+               LIMIT 1
+           ) latest ON true
+           {}
+           GROUP BY DATE(p.timestamp)
            ORDER BY date"#,
         since_clause
     );

@@ -98,17 +98,48 @@
           label: 'Views',
           data: chartData.map(v => v.views),
           borderColor: '#f58231',
-          backgroundColor: 'rgba(245, 130, 49, 0.1)',
+          backgroundColor: (ctx: { chart: Chart }) => {
+            const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
+            gradient.addColorStop(0, 'rgba(245, 130, 49, 0.35)');
+            gradient.addColorStop(1, 'rgba(245, 130, 49, 0.0)');
+            return gradient;
+          },
           fill: true,
+          tension: 0.4,
+          borderWidth: 2.5,
+          pointRadius: chartData.length > 30 ? 0 : 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#f58231',
+          pointBorderColor: '#111',
+          pointBorderWidth: 2,
         }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#ccc' } } },
+        interaction: { intersect: false, mode: 'index' as const },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1a1a1a',
+            borderColor: '#333',
+            borderWidth: 1,
+            titleColor: '#ccc',
+            bodyColor: '#f58231',
+            padding: 10,
+            displayColors: false,
+          },
+        },
         scales: {
-          x: { ticks: { color: '#888' }, grid: { color: '#222' } },
-          y: { ticks: { color: '#888' }, grid: { color: '#222' } },
+          x: {
+            ticks: { color: '#666', maxRotation: 45, maxTicksLimit: 12, font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,0.04)' },
+          },
+          y: {
+            ticks: { color: '#666', font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,0.06)' },
+            beginAtZero: true,
+          },
         },
       },
     });
