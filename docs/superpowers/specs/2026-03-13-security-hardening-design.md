@@ -68,6 +68,9 @@ Add a password-protected login page. A single `DASHBOARD_PASSWORD` env var contr
 - `web/src/routes/logout/+server.ts` — clears session cookie, redirects to `/login`
 - `web/src/hooks.server.ts` — auth guard that runs on every request
 
+**Modified files:**
+- `web/src/routes/+layout.svelte` — add a "Logout" link in the nav bar (visible when authenticated)
+
 **New env vars (web/.env):**
 - `DASHBOARD_PASSWORD` — the login password
 - `SESSION_SECRET` — random string used to sign session cookies (minimum 32 chars)
