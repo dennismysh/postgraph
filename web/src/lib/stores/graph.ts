@@ -31,7 +31,7 @@ export async function loadGraph() {
       if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
         graph.addEdge(edge.source, edge.target, {
           weight: edge.weight,
-          type: edge.edge_type,
+          edge_type: edge.edge_type,
         });
       }
     }
