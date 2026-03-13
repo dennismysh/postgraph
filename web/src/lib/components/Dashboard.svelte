@@ -152,19 +152,21 @@
     // Views over time
     await loadViews();
 
-    // Topics breakdown
+    // Topics breakdown — show top 15 topics, dynamic height
+    const topTopics = analytics.topics.slice(0, 15);
     topicsChart = new Chart(topicsCanvas, {
       type: 'bar',
       data: {
-        labels: analytics.topics.map(t => t.name),
+        labels: topTopics.map(t => t.name),
         datasets: [{
           label: 'Posts',
-          data: analytics.topics.map(t => t.post_count),
+          data: topTopics.map(t => t.post_count),
           backgroundColor: '#4363d8',
         }],
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         indexAxis: 'y',
         plugins: { legend: { display: false } },
         scales: {
@@ -235,7 +237,9 @@
       </div>
       <div class="chart-card">
         <h3>Topics Breakdown</h3>
-        <canvas bind:this={topicsCanvas}></canvas>
+        <div class="topics-container">
+          <canvas bind:this={topicsCanvas}></canvas>
+        </div>
       </div>
     </div>
 
@@ -330,6 +334,7 @@
     border-radius: 8px;
     padding: 1rem;
   }
+  .topics-container { position: relative; height: 400px; }
   h3 { margin: 0 0 0.5rem; font-size: 1rem; }
   .views-card { margin-bottom: 1rem; }
   .chart-container { position: relative; height: 300px; }

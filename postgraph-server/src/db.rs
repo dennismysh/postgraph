@@ -12,7 +12,6 @@ pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
              media_type = COALESCE(EXCLUDED.media_type, posts.media_type),
              media_url = COALESCE(EXCLUDED.media_url, posts.media_url),
              permalink = COALESCE(EXCLUDED.permalink, posts.permalink),
-             timestamp = EXCLUDED.timestamp,
              synced_at = NOW()"#,
     )
     .bind(&post.id)
