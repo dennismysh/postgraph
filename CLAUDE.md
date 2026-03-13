@@ -47,6 +47,18 @@ See `.env.example`. Required:
 - `MERCURY_API_KEY` — Inception Labs API key
 - `MERCURY_API_URL` — Mercury endpoint (default: https://api.inceptionlabs.ai/v1)
 - `POSTGRAPH_API_KEY` — API key for frontend-to-backend auth
+- `FRONTEND_ORIGIN` — Allowed CORS origin (default: http://localhost:5173)
+
+### Shuttle Secrets (production)
+
+Use `Secrets.toml` (git-ignored) instead of `.env` for Shuttle deployments. See `Secrets.toml.example`.
+
+### Frontend Auth
+
+The frontend uses server-side session auth. See `web/.env.example` for:
+- `API_URL` / `API_KEY` — server-to-server auth with Rust backend (never exposed to browser)
+- `DASHBOARD_PASSWORD` — login password
+- `SESSION_SECRET` — cookie signing key
 
 ## Key Patterns
 
