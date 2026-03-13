@@ -16,6 +16,7 @@
   let analyzing = $state(false);
   let syncing = $state(false);
   let syncStatus = $state('');
+  let syncStatusData: SyncStatus | null = $state(null);
   let statusInterval: ReturnType<typeof setInterval> | null = null;
   let syncInterval: ReturnType<typeof setInterval> | null = null;
   let allViewsData: ViewsPoint[] = $state([]);
@@ -209,6 +210,13 @@
     return 0;
   }
 
+  function getSyncProgressPercent(): number {
+    if (syncStatusData && syncStatusData.total > 0) {
+      return Math.round((syncStatusData.synced / syncStatusData.total) * 100);
+    }
+    return 0;
+  }
+
   async function startAnalysis() {
     analyzing = true;
     await api.startAnalyze();
@@ -263,8 +271,10 @@
       try {
         const status: SyncStatus = await api.getSyncStatus();
         syncStatus = status.message;
+        syncStatusData = status;
         if (!status.running) {
           syncing = false;
+          syncStatusData = null;
           if (syncInterval) clearInterval(syncInterval);
           syncInterval = null;
           await refreshAll();
@@ -365,11 +375,22 @@
         <span class="label">Topics</span>
       </div>
       <div class="sync-actions">
-        <button class="sync-btn" onclick={handleSync} disabled={syncing}>
-          {syncing ? 'Syncing...' : 'Sync'}
-        </button>
-        {#if syncStatus}
-          <span class="sync-status">{syncStatus}</span>
+        {#if syncing}
+          <div class="sync-progress-section">
+            <div class="progress-bar-container sync-progress-bar-container">
+              <div class="progress-bar sync-progress-bar" style="width: {getSyncProgressPercent()}%"></div>
+            </div>
+            <p class="progress-text sync-progress-text">
+              {syncStatus}{#if syncStatusData && syncStatusData.total > 0} &mdash; {syncStatusData.synced} / {syncStatusData.total} ({getSyncProgressPercent()}%){/if}
+            </p>
+          </div>
+        {:else}
+          <button class="sync-btn" onclick={handleSync}>
+            Sync
+          </button>
+          {#if syncStatus}
+            <span class="sync-status">{syncStatus}</span>
+          {/if}
         {/if}
       </div>
     </div>
@@ -485,6 +506,27 @@
   .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .sync-btn:hover:not(:disabled) { background: #1d4ed8; }
   .sync-status { font-size: 0.75rem; color: #aaa; }
+  .sync-progress-section {
+    flex: 1;
+    min-width: 200px;
+  }
+  .sync-progress-bar-container {
+    background: #222;
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+  }
+  .sync-progress-bar {
+    background: #2563eb;
+    height: 100%;
+    transition: width 0.3s ease;
+    border-radius: 4px;
+  }
+  .sync-progress-text {
+    color: #aaa;
+    font-size: 0.75rem;
+    margin: 0.3rem 0 0;
+  }
   .analyze-section {
     margin-bottom: 1.5rem;
     padding: 1rem;

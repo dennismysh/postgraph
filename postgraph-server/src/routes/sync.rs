@@ -17,6 +17,8 @@ pub struct SyncStartResult {
 pub struct SyncStatus {
     pub running: bool,
     pub message: String,
+    pub synced: u32,
+    pub total: u32,
 }
 
 /// Kick off sync in a background task and return immediately, avoiding
@@ -32,15 +34,20 @@ pub async fn trigger_sync(State(state): State<AppState>) -> Json<SyncStartResult
     *state.sync_message.write().await = "Starting sync...".to_string();
     info!("Manual sync triggered (background)");
 
+    // Reset progress counters
+    state.sync_progress.store(0, Ordering::SeqCst);
+    state.sync_total.store(0, Ordering::SeqCst);
+
     let bg = state.clone();
     tokio::spawn(async move {
         let mut status_parts: Vec<String> = Vec::new();
+        let progress = Some((&bg.sync_progress, &bg.sync_total));
 
         // Phase 1: sync posts
         {
             *bg.sync_message.write().await = "Syncing posts from Threads...".to_string();
         }
-        match run_sync(&bg.pool, &bg.threads).await {
+        match run_sync(&bg.pool, &bg.threads, progress).await {
             Ok(n) => {
                 status_parts.push(format!("{n} synced"));
                 info!("Sync complete: {n} posts synced");
@@ -57,7 +64,7 @@ pub async fn trigger_sync(State(state): State<AppState>) -> Json<SyncStartResult
         {
             *bg.sync_message.write().await = "Refreshing metrics...".to_string();
         }
-        match refresh_all_metrics(&bg.pool, &bg.threads).await {
+        match refresh_all_metrics(&bg.pool, &bg.threads, progress).await {
             Ok(n) => {
                 status_parts.push(format!("{n} refreshed"));
                 info!("Metrics refresh complete: {n} posts refreshed");
@@ -83,5 +90,7 @@ pub async fn sync_status(State(state): State<AppState>) -> Json<SyncStatus> {
     Json(SyncStatus {
         running: state.sync_running.load(Ordering::SeqCst),
         message: state.sync_message.read().await.clone(),
+        synced: state.sync_progress.load(Ordering::SeqCst),
+        total: state.sync_total.load(Ordering::SeqCst),
     })
 }

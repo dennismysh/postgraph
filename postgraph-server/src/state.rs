@@ -16,4 +16,6 @@ pub struct AppState {
     pub analysis_total: Arc<AtomicU32>,
     pub sync_running: Arc<AtomicBool>,
     pub sync_message: Arc<RwLock<String>>,
+    pub sync_progress: Arc<AtomicU32>,
+    pub sync_total: Arc<AtomicU32>,
 }

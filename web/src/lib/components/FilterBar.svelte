@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte';
   import { filters, resetFilters } from '$lib/stores/filters';
   import { graphData, loadGraph } from '$lib/stores/graph';
-  import { api } from '$lib/api';
+  import { api, type SyncStatus } from '$lib/api';
 
   let allTopics = $derived.by(() => {
     const data = $graphData;
@@ -16,6 +16,7 @@
 
   let syncing = $state(false);
   let syncStatus = $state('');
+  let syncStatusData: SyncStatus | null = $state(null);
   let syncInterval: ReturnType<typeof setInterval> | null = null;
   let reanalyzing = $state(false);
   let reanalyzeStatus = $state('');
@@ -53,14 +54,23 @@
     }
   }
 
+  function getSyncProgressPercent(): number {
+    if (syncStatusData && syncStatusData.total > 0) {
+      return Math.round((syncStatusData.synced / syncStatusData.total) * 100);
+    }
+    return 0;
+  }
+
   function pollSyncStatus() {
     if (syncInterval) clearInterval(syncInterval);
     syncInterval = setInterval(async () => {
       try {
         const status = await api.getSyncStatus();
         syncStatus = status.message;
+        syncStatusData = status;
         if (!status.running) {
           syncing = false;
+          syncStatusData = null;
           if (syncInterval) clearInterval(syncInterval);
           syncInterval = null;
           await loadGraph();
@@ -158,7 +168,16 @@
       {reanalyzing ? 'Reanalyzing...' : 'Reanalyze'}
     </button>
   </div>
-  {#if syncStatus}
+  {#if syncing && syncStatusData}
+    <div class="sync-progress-section">
+      <div class="sync-progress-bar-container">
+        <div class="sync-progress-bar" style="width: {getSyncProgressPercent()}%"></div>
+      </div>
+      <span class="status">
+        {syncStatus}{#if syncStatusData.total > 0} &mdash; {syncStatusData.synced} / {syncStatusData.total} ({getSyncProgressPercent()}%){/if}
+      </span>
+    </div>
+  {:else if syncStatus}
     <span class="status">{syncStatus}</span>
   {/if}
   {#if reanalyzeStatus}
@@ -257,6 +276,21 @@
   .status {
     font-size: 0.75rem;
     color: #aaa;
+  }
+  .sync-progress-section {
+    flex: 1 1 100%;
+  }
+  .sync-progress-bar-container {
+    background: #222;
+    border-radius: 4px;
+    height: 6px;
+    overflow: hidden;
+  }
+  .sync-progress-bar {
+    background: #2563eb;
+    height: 100%;
+    transition: width 0.3s ease;
+    border-radius: 4px;
   }
   label { color: #888; font-size: 0.8rem; }
 </style>

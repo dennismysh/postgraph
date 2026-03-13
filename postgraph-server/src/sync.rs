@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -10,10 +12,21 @@ use crate::types::Post;
 
 /// Refresh insights metrics for all existing posts in the database.
 /// Returns the number of posts successfully updated.
-pub async fn refresh_all_metrics(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppError> {
+/// When `progress` and `total_counter` are provided, updates them atomically for
+/// real-time tracking by the status endpoint.
+pub async fn refresh_all_metrics(
+    pool: &PgPool,
+    client: &ThreadsClient,
+    progress: Option<(&Arc<AtomicU32>, &Arc<AtomicU32>)>,
+) -> Result<u32, AppError> {
     let post_ids = db::get_all_post_ids(pool).await?;
     let total = post_ids.len();
     info!("Refreshing metrics for {total} existing posts");
+
+    if let Some((prog, tot)) = &progress {
+        tot.store(total as u32, Ordering::SeqCst);
+        prog.store(0, Ordering::SeqCst);
+    }
 
     let mut updated: u32 = 0;
 
@@ -68,6 +81,10 @@ pub async fn refresh_all_metrics(pool: &PgPool, client: &ThreadsClient) -> Resul
             }
         }
 
+        if let Some((prog, _)) = &progress {
+            prog.store((i + 1) as u32, Ordering::SeqCst);
+        }
+
         // Throttle between API calls
         tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -115,10 +132,22 @@ fn threads_post_to_post(tp: &ThreadsPost) -> Post {
     }
 }
 
-pub async fn run_sync(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppError> {
+/// When `progress` and `total_counter` are provided, updates them atomically for
+/// real-time tracking. Since the Threads API is paginated, total is updated as
+/// batches arrive.
+pub async fn run_sync(
+    pool: &PgPool,
+    client: &ThreadsClient,
+    progress: Option<(&Arc<AtomicU32>, &Arc<AtomicU32>)>,
+) -> Result<u32, AppError> {
     let sync_state = db::get_sync_state(pool).await?;
     let mut cursor = sync_state.last_sync_cursor;
     let mut total_synced: u32 = 0;
+
+    if let Some((prog, tot)) = &progress {
+        prog.store(0, Ordering::SeqCst);
+        tot.store(0, Ordering::SeqCst);
+    }
 
     loop {
         let response = client.get_user_threads(cursor.as_deref()).await?;
@@ -180,9 +209,14 @@ pub async fn run_sync(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppE
 
             // Throttle between insight calls
             tokio::time::sleep(Duration::from_millis(200)).await;
+
+            total_synced += 1;
+            if let Some((prog, tot)) = &progress {
+                prog.store(total_synced, Ordering::SeqCst);
+                tot.store(total_synced, Ordering::SeqCst);
+            }
         }
 
-        total_synced += post_count as u32;
         info!("Synced {} posts (batch of {})", total_synced, post_count);
 
         // Update cursor — extract next cursor and whether there's a next page

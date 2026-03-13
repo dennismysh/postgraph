@@ -82,6 +82,8 @@ async fn main() {
         analysis_total: Arc::new(AtomicU32::new(0)),
         sync_running: Arc::new(AtomicBool::new(false)),
         sync_message: Arc::new(tokio::sync::RwLock::new(String::new())),
+        sync_progress: Arc::new(AtomicU32::new(0)),
+        sync_total: Arc::new(AtomicU32::new(0)),
     };
 
     // Spawn background sync task (first run after 30s delay, then every 15 min)
@@ -120,12 +122,12 @@ async fn main() {
             }
 
             info!("Background sync starting");
-            if let Err(e) = sync::run_sync(&bg_state.pool, &bg_state.threads).await {
+            if let Err(e) = sync::run_sync(&bg_state.pool, &bg_state.threads, None).await {
                 tracing::error!("Background sync failed: {e}");
                 continue;
             }
             // Refresh metrics for all existing posts so views/likes stay current
-            if let Err(e) = sync::refresh_all_metrics(&bg_state.pool, &bg_state.threads).await {
+            if let Err(e) = sync::refresh_all_metrics(&bg_state.pool, &bg_state.threads, None).await {
                 tracing::error!("Background metrics refresh failed: {e}");
             }
             let mut consecutive_failures = 0;
