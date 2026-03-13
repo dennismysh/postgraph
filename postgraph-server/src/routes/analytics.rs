@@ -54,7 +54,7 @@ pub async fn get_views(
     };
 
     let sql = format!(
-        r#"SELECT date, SUM(max_views)::bigint as total_views
+        r#"SELECT date::text, SUM(max_views)::bigint as total_views
            FROM (
                SELECT DATE(captured_at) as date, post_id, MAX(views) as max_views
                FROM engagement_snapshots
