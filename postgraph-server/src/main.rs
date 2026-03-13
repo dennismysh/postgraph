@@ -52,9 +52,29 @@ async fn main() {
         .unwrap_or_else(|_| "https://api.inceptionlabs.ai/v1".to_string());
     let api_key = std::env::var("POSTGRAPH_API_KEY").expect("POSTGRAPH_API_KEY must be set");
 
+    // Load token from DB if available (persists across deploys), otherwise use env var.
+    let effective_token = match db::load_token(&pool).await {
+        Ok(Some(stored)) => {
+            info!(
+                "Loaded Threads token from database (expires {:?})",
+                stored.expires_at
+            );
+            stored.access_token
+        }
+        _ => {
+            info!("No stored token found, using THREADS_ACCESS_TOKEN env var");
+            // Seed the DB with the env var token (assume 60-day expiry from now)
+            let expires_at = chrono::Utc::now() + chrono::Duration::days(60);
+            if let Err(e) = db::save_token(&pool, &threads_token, expires_at).await {
+                tracing::warn!("Failed to seed token to database: {e}");
+            }
+            threads_token
+        }
+    };
+
     let state = AppState {
         pool: pool.clone(),
-        threads: Arc::new(ThreadsClient::new(threads_token)),
+        threads: Arc::new(ThreadsClient::new(effective_token)),
         mercury: Arc::new(MercuryClient::new(mercury_key, mercury_url)),
         api_key,
         analysis_running: Arc::new(AtomicBool::new(false)),
@@ -69,6 +89,34 @@ async fn main() {
         let mut interval = tokio::time::interval(Duration::from_secs(15 * 60));
         loop {
             interval.tick().await;
+
+            // Refresh Threads token if it expires within 7 days
+            if let Ok(Some(stored)) = db::load_token(&bg_state.pool).await {
+                let should_refresh = stored
+                    .expires_at
+                    .map(|exp| exp - chrono::Utc::now() < chrono::Duration::days(7))
+                    .unwrap_or(false);
+                if should_refresh {
+                    info!("Threads token expires soon, refreshing...");
+                    match bg_state.threads.refresh_token().await {
+                        Ok((new_token, expires_in)) => {
+                            let expires_at =
+                                chrono::Utc::now() + chrono::Duration::seconds(expires_in);
+                            if let Err(e) =
+                                db::save_token(&bg_state.pool, &new_token, expires_at).await
+                            {
+                                tracing::error!("Failed to save refreshed token: {e}");
+                            } else {
+                                info!("Threads token refreshed, expires at {expires_at}");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to refresh Threads token: {e}");
+                        }
+                    }
+                }
+            }
+
             info!("Background sync starting");
             if let Err(e) = sync::run_sync(&bg_state.pool, &bg_state.threads).await {
                 tracing::error!("Background sync failed: {e}");

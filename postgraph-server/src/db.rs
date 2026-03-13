@@ -207,6 +207,47 @@ pub async fn get_engagement_history(
     .await
 }
 
+// -- API Tokens --
+
+/// Stored token with expiry info.
+pub struct StoredToken {
+    pub access_token: String,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Load the stored Threads API token (if any).
+pub async fn load_token(pool: &PgPool) -> sqlx::Result<Option<StoredToken>> {
+    let row: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> =
+        sqlx::query_as("SELECT access_token, expires_at FROM api_tokens WHERE id = 1")
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|(access_token, expires_at)| StoredToken {
+        access_token,
+        expires_at,
+    }))
+}
+
+/// Save (upsert) the Threads API token with its expiry.
+pub async fn save_token(
+    pool: &PgPool,
+    access_token: &str,
+    expires_at: chrono::DateTime<chrono::Utc>,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO api_tokens (id, access_token, expires_at, refreshed_at)
+           VALUES (1, $1, $2, NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             access_token = EXCLUDED.access_token,
+             expires_at = EXCLUDED.expires_at,
+             refreshed_at = NOW()"#,
+    )
+    .bind(access_token)
+    .bind(expires_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 // -- Sync State --
 
 pub async fn get_sync_state(pool: &PgPool) -> sqlx::Result<SyncState> {
