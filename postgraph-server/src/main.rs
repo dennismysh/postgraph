@@ -127,7 +127,8 @@ async fn main() {
                 continue;
             }
             // Refresh metrics for all existing posts so views/likes stay current
-            if let Err(e) = sync::refresh_all_metrics(&bg_state.pool, &bg_state.threads, None).await {
+            if let Err(e) = sync::refresh_all_metrics(&bg_state.pool, &bg_state.threads, None).await
+            {
                 tracing::error!("Background metrics refresh failed: {e}");
             }
             let mut consecutive_failures = 0;

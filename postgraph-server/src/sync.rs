@@ -97,28 +97,47 @@ pub async fn refresh_all_metrics(
     Ok(updated)
 }
 
-fn parse_threads_timestamp(ts: &str) -> DateTime<Utc> {
-    // Try RFC3339 first (e.g. "2026-02-19T12:34:56+00:00")
-    DateTime::parse_from_rfc3339(ts)
-        .or_else(|_| {
-            // Threads API returns "+0000" without colon, which isn't valid RFC3339
-            DateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S%z")
-        })
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|_| Utc::now())
+fn parse_threads_timestamp(ts: &str) -> Option<DateTime<Utc>> {
+    // Try RFC3339 first (e.g. "2026-02-19T12:34:56+00:00" or "...Z")
+    if let Ok(dt) = DateTime::parse_from_rfc3339(ts) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    // Threads API often returns "+0000" without colon, which isn't valid RFC3339
+    if let Ok(dt) = DateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S%z") {
+        return Some(dt.with_timezone(&Utc));
+    }
+    // Naive datetime without timezone — assume UTC
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S") {
+        return Some(dt.and_utc());
+    }
+    warn!("Failed to parse Threads timestamp: {ts:?}");
+    None
 }
 
 fn threads_post_to_post(tp: &ThreadsPost) -> Post {
+    let timestamp = match tp.timestamp.as_deref() {
+        Some(ts) => parse_threads_timestamp(ts).unwrap_or_else(|| {
+            warn!(
+                "Post {} has unparseable timestamp {ts:?}, using now()",
+                tp.id
+            );
+            Utc::now()
+        }),
+        None => {
+            warn!(
+                "Post {} has no timestamp from Threads API, using now()",
+                tp.id
+            );
+            Utc::now()
+        }
+    };
+
     Post {
         id: tp.id.clone(),
         text: tp.text.clone(),
         media_type: tp.media_type.clone(),
         media_url: tp.media_url.clone(),
-        timestamp: tp
-            .timestamp
-            .as_deref()
-            .map(parse_threads_timestamp)
-            .unwrap_or_else(Utc::now),
+        timestamp,
         permalink: tp.permalink.clone(),
         views: 0,
         likes: 0,
