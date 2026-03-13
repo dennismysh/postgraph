@@ -1,12 +1,19 @@
 use crate::error::AppError;
 use reqwest::Client;
 use serde::Deserialize;
+use tokio::sync::RwLock;
 
 const BASE_URL: &str = "https://graph.threads.net/v1.0";
 
 pub struct ThreadsClient {
     client: Client,
+    access_token: RwLock<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RefreshTokenResponse {
     access_token: String,
+    expires_in: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,15 +75,46 @@ impl ThreadsClient {
     pub fn new(access_token: String) -> Self {
         Self {
             client: Client::new(),
-            access_token,
+            access_token: RwLock::new(access_token),
         }
+    }
+
+    /// Update the in-memory access token (e.g. after loading from DB or refreshing).
+    pub async fn set_token(&self, token: String) {
+        *self.access_token.write().await = token;
+    }
+
+    /// Get a clone of the current access token.
+    async fn token(&self) -> String {
+        self.access_token.read().await.clone()
+    }
+
+    /// Refresh the long-lived token via the Threads API.
+    /// Returns the new token and its TTL in seconds.
+    pub async fn refresh_token(&self) -> Result<(String, i64), AppError> {
+        let current = self.token().await;
+        let url = format!(
+            "{}/refresh_access_token?grant_type=th_refresh_token&access_token={}",
+            BASE_URL, current
+        );
+        let resp = self.client.get(&url).send().await?;
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::ThreadsApi(format!(
+                "Token refresh failed: {body}"
+            )));
+        }
+        let data: RefreshTokenResponse = resp.json().await?;
+        self.set_token(data.access_token.clone()).await;
+        Ok((data.access_token, data.expires_in))
     }
 
     /// Lightweight connectivity check — fetches the authenticated user's profile.
     pub async fn health_check(&self) -> Result<(), AppError> {
         let url = format!(
             "{}/me?fields=id&access_token={}",
-            BASE_URL, self.access_token
+            BASE_URL,
+            self.token().await
         );
         let resp = self.client.get(&url).send().await?;
         if resp.status() == 429 {
@@ -95,7 +133,8 @@ impl ThreadsClient {
     ) -> Result<ThreadsListResponse, AppError> {
         let mut url = format!(
             "{}/me/threads?fields=id,text,media_type,media_url,timestamp,permalink&access_token={}",
-            BASE_URL, self.access_token
+            BASE_URL,
+            self.token().await
         );
         if let Some(c) = cursor {
             url.push_str(&format!("&after={}", c));
@@ -116,7 +155,9 @@ impl ThreadsClient {
     pub async fn get_post_insights(&self, post_id: &str) -> Result<PostInsights, AppError> {
         let url = format!(
             "{}/{}/insights?metric=views,likes,replies,reposts,quotes,shares&access_token={}",
-            BASE_URL, post_id, self.access_token
+            BASE_URL,
+            post_id,
+            self.token().await
         );
 
         let resp = self.client.get(&url).send().await?;
