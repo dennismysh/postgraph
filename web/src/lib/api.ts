@@ -82,6 +82,7 @@ export interface PostDetail {
 
 export interface SyncResult {
   posts_synced: number;
+  metrics_refreshed: number;
   posts_analyzed: number;
   edges_computed: number;
 }
@@ -115,13 +116,31 @@ export const api = {
   getAnalytics: () => fetchApi<AnalyticsData>('/api/analytics'),
   triggerSync: () => fetch('/api/sync', {
     method: 'POST',
-  }).then(r => r.json() as Promise<SyncResult>),
+  }).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({ error: `Sync failed (${r.status})` }));
+      throw new Error(body.error ?? `Sync failed (${r.status})`);
+    }
+    return r.json() as Promise<SyncResult>;
+  }),
   triggerReanalyze: () => fetch('/api/reanalyze', {
     method: 'POST',
-  }).then(r => r.json() as Promise<ReanalyzeResult>),
+  }).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({ error: `Reanalyze failed (${r.status})` }));
+      throw new Error(body.error ?? `Reanalyze failed (${r.status})`);
+    }
+    return r.json() as Promise<ReanalyzeResult>;
+  }),
   startAnalyze: () => fetch('/api/analyze', {
     method: 'POST',
-  }).then(r => r.json() as Promise<AnalyzeStartResult>),
+  }).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({ error: `Analyze failed (${r.status})` }));
+      throw new Error(body.error ?? `Analyze failed (${r.status})`);
+    }
+    return r.json() as Promise<AnalyzeStartResult>;
+  }),
   getAnalyzeStatus: () => fetchApi<AnalyzeStatus>('/api/analyze/status'),
   getViews: (since?: string) => {
     const params = since ? `?since=${encodeURIComponent(since)}` : '';

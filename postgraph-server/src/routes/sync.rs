@@ -1,4 +1,7 @@
-use axum::{Json, extract::State};
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use tracing::info;
 
@@ -15,14 +18,24 @@ pub struct SyncResult {
     pub edges_computed: u32,
 }
 
-pub async fn trigger_sync(
-    State(state): State<AppState>,
-) -> Result<Json<SyncResult>, axum::http::StatusCode> {
+#[derive(Serialize)]
+struct ErrorBody {
+    error: String,
+}
+
+fn json_error(status: StatusCode, msg: String) -> Response {
+    (status, Json(ErrorBody { error: msg })).into_response()
+}
+
+pub async fn trigger_sync(State(state): State<AppState>) -> Result<Json<SyncResult>, Response> {
     info!("Manual sync triggered");
 
     let posts_synced = run_sync(&state.pool, &state.threads).await.map_err(|e| {
         tracing::error!("Sync failed: {e}");
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Sync failed: {e}"),
+        )
     })?;
 
     // Refresh metrics (views, likes, etc.) for all existing posts
@@ -30,7 +43,10 @@ pub async fn trigger_sync(
         .await
         .map_err(|e| {
             tracing::error!("Metrics refresh failed: {e}");
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Metrics refresh failed: {e}"),
+            )
         })?;
 
     // Loop analysis until all posts are analyzed (backfill)
@@ -40,7 +56,10 @@ pub async fn trigger_sync(
             .await
             .map_err(|e| {
                 tracing::error!("Analysis failed: {e}");
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Analysis failed: {e}"),
+                )
             })?;
         posts_analyzed += batch;
         if batch == 0 {
@@ -56,7 +75,10 @@ pub async fn trigger_sync(
             .await
             .map_err(|e| {
                 tracing::error!("Edge computation failed: {e}");
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Edge computation failed: {e}"),
+                )
             })?;
         edges_computed += batch;
         if batch == 0 {

@@ -1,4 +1,7 @@
-use axum::{Json, extract::State};
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use tracing::info;
 
@@ -14,14 +17,26 @@ pub struct ReanalyzeResult {
     pub edges_computed: u32,
 }
 
+#[derive(Serialize)]
+struct ErrorBody {
+    error: String,
+}
+
+fn json_error(status: StatusCode, msg: String) -> Response {
+    (status, Json(ErrorBody { error: msg })).into_response()
+}
+
 pub async fn trigger_reanalyze(
     State(state): State<AppState>,
-) -> Result<Json<ReanalyzeResult>, axum::http::StatusCode> {
+) -> Result<Json<ReanalyzeResult>, Response> {
     info!("Reanalyze triggered — resetting all analysis");
 
     let posts_reset = db::reset_all_analysis(&state.pool).await.map_err(|e| {
         tracing::error!("Reset analysis failed: {e}");
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Reset analysis failed: {e}"),
+        )
     })?;
 
     info!("Reset {posts_reset} posts, re-running analysis");
@@ -32,7 +47,10 @@ pub async fn trigger_reanalyze(
             .await
             .map_err(|e| {
                 tracing::error!("Reanalysis failed: {e}");
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Reanalysis failed: {e}"),
+                )
             })?;
         posts_analyzed += batch;
         if batch == 0 {
@@ -47,7 +65,10 @@ pub async fn trigger_reanalyze(
             .await
             .map_err(|e| {
                 tracing::error!("Edge computation failed: {e}");
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Edge computation failed: {e}"),
+                )
             })?;
         edges_computed += batch;
         if batch == 0 {
