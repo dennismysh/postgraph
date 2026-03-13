@@ -118,8 +118,29 @@ export interface ViewsPoint {
   views: number;
 }
 
+export interface TagGraphNode {
+  id: string;
+  label: string;
+  post_count: number;
+  total_engagement: number;
+  post_ids: string[];
+}
+
+export interface TagGraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+  shared_posts: number;
+}
+
+export interface TagGraphData {
+  nodes: TagGraphNode[];
+  edges: TagGraphEdge[];
+}
+
 export const api = {
   getGraph: () => fetchApi<GraphData>('/api/graph'),
+  getTagGraph: () => fetchApi<TagGraphData>('/api/graph/tags'),
   getPost: (id: string) => fetchApi<PostDetail>(`/api/posts/${id}`),
   getPosts: () => fetchApi<Post[]>('/api/posts'),
   getAnalytics: () => fetchApi<AnalyticsData>('/api/analytics'),
