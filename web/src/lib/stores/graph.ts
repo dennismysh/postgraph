@@ -23,6 +23,8 @@ export async function loadGraph() {
         size: node.size,
         sentiment: node.sentiment,
         topics: node.topics,
+        timestamp: node.timestamp,
+        engagement: node.engagement,
         x: Math.random() * 100,
         y: Math.random() * 100,
       });

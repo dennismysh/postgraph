@@ -12,6 +12,8 @@ export interface GraphNode {
   size: number;
   sentiment: number | null;
   topics: string[];
+  timestamp: string | null;
+  engagement: number;
 }
 
 export interface GraphEdge {
@@ -64,6 +66,12 @@ export interface SyncResult {
   edges_computed: number;
 }
 
+export interface ReanalyzeResult {
+  posts_reset: number;
+  posts_analyzed: number;
+  edges_computed: number;
+}
+
 export const api = {
   getGraph: () => fetchApi<GraphData>('/api/graph'),
   getPosts: () => fetchApi<Post[]>('/api/posts'),
@@ -71,4 +79,7 @@ export const api = {
   triggerSync: () => fetch('/api/sync', {
     method: 'POST',
   }).then(r => r.json() as Promise<SyncResult>),
+  triggerReanalyze: () => fetch('/api/reanalyze', {
+    method: 'POST',
+  }).then(r => r.json() as Promise<ReanalyzeResult>),
 };

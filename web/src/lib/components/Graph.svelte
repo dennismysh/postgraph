@@ -4,7 +4,9 @@
   import forceAtlas2 from 'graphology-layout-forceatlas2';
   import louvain from 'graphology-communities-louvain';
   import { graphInstance, selectedNode, loading, error } from '$lib/stores/graph';
+  import { filters } from '$lib/stores/filters';
   import type Graph from 'graphology';
+  import type { Filters } from '$lib/stores/filters';
 
   let container: HTMLDivElement = $state(null!);
   let sigma: Sigma | null = $state(null);
@@ -17,6 +19,58 @@
     '#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',
     '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990',
   ];
+
+  function nodeMatchesFilters(attrs: any, f: Filters): boolean {
+    if (f.dateFrom && attrs.timestamp && attrs.timestamp < f.dateFrom) return false;
+    if (f.dateTo && attrs.timestamp && attrs.timestamp > f.dateTo) return false;
+    if (f.minEngagement > 0 && (attrs.engagement ?? 0) < f.minEngagement) return false;
+    if (f.topics.length > 0) {
+      const nodeTopics: string[] = attrs.topics || [];
+      if (!f.topics.some((t: string) => nodeTopics.includes(t))) return false;
+    }
+    if (f.searchQuery) {
+      const label = (attrs.label || '').toLowerCase();
+      if (!label.includes(f.searchQuery.toLowerCase())) return false;
+    }
+    return true;
+  }
+
+  function applyFilters(f: Filters) {
+    if (!sigma) return;
+    const graph = sigma.getGraph();
+    const visibleNodes = new Set<string>();
+
+    graph.forEachNode((node, attrs) => {
+      if (nodeMatchesFilters(attrs, f)) {
+        visibleNodes.add(node);
+      }
+    });
+
+    sigma.setSetting('nodeReducer', (node, data) => {
+      if (!visibleNodes.has(node)) {
+        return { ...data, hidden: true };
+      }
+      return data;
+    });
+
+    sigma.setSetting('edgeReducer', (edge, data) => {
+      const source = graph.source(edge);
+      const target = graph.target(edge);
+      if (!visibleNodes.has(source) || !visibleNodes.has(target)) {
+        return { ...data, hidden: true };
+      }
+      return data;
+    });
+  }
+
+  let currentFilters: Filters = {
+    topics: [],
+    dateFrom: null,
+    dateTo: null,
+    minEngagement: 0,
+    edgeTypes: [],
+    searchQuery: '',
+  };
 
   function initSigma(graph: Graph) {
     try {
@@ -55,13 +109,21 @@
       sigma.on('clickStage', () => {
         selectedNode.set(null);
       });
+
+      // Apply current filters after init
+      applyFilters(currentFilters);
     } catch (e) {
       error.set(e instanceof Error ? e.message : 'Failed to render graph');
     }
   }
 
-  const unsubscribe = graphInstance.subscribe((graph) => {
+  const unsubGraph = graphInstance.subscribe((graph) => {
     if (graph && container) initSigma(graph);
+  });
+
+  const unsubFilters = filters.subscribe((f) => {
+    currentFilters = f;
+    applyFilters(f);
   });
 
   onMount(() => {
@@ -70,7 +132,8 @@
   });
 
   onDestroy(() => {
-    unsubscribe();
+    unsubGraph();
+    unsubFilters();
     if (sigma) sigma.kill();
   });
 </script>

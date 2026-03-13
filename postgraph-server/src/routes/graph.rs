@@ -10,6 +10,8 @@ pub struct GraphNode {
     pub size: f32,
     pub sentiment: Option<f32>,
     pub topics: Vec<String>,
+    pub timestamp: Option<String>,
+    pub engagement: i32,
 }
 
 #[derive(Serialize)]
@@ -64,6 +66,8 @@ pub async fn get_graph(
                 size,
                 sentiment: p.sentiment,
                 topics,
+                timestamp: Some(p.timestamp.format("%Y-%m-%d").to_string()),
+                engagement: p.likes + p.replies_count + p.reposts + p.quotes,
             }
         })
         .collect();

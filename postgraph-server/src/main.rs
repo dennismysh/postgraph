@@ -95,6 +95,7 @@ async fn main() {
         .route("/api/graph", get(routes::graph::get_graph))
         .route("/api/analytics", get(routes::analytics::get_analytics))
         .route("/api/sync", post(routes::sync::trigger_sync))
+        .route("/api/reanalyze", post(routes::reanalyze::trigger_reanalyze))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,
