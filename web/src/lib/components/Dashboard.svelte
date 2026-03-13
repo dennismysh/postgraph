@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
-  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type Post } from '$lib/api';
+  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type Post, type SyncStatus } from '$lib/api';
 
   let analytics: AnalyticsData | null = $state(null);
   let engagementCanvas: HTMLCanvasElement = $state(null!);
@@ -17,6 +17,7 @@
   let syncing = $state(false);
   let syncStatus = $state('');
   let statusInterval: ReturnType<typeof setInterval> | null = null;
+  let syncInterval: ReturnType<typeof setInterval> | null = null;
   let allViewsData: ViewsPoint[] = $state([]);
   let rangeSums: Record<string, number> = $state({});
 
@@ -240,21 +241,44 @@
 
   async function handleSync() {
     syncing = true;
-    syncStatus = 'Syncing...';
+    syncStatus = 'Starting sync...';
     try {
       const result = await api.triggerSync();
-      syncStatus = `Done! ${result.posts_synced} synced, ${result.metrics_refreshed} refreshed.`;
-      await refreshAll();
+      if (!result.started) {
+        syncStatus = result.message;
+        syncing = false;
+        return;
+      }
+      pollSyncStatus();
     } catch (e) {
       syncStatus = `Failed: ${e instanceof Error ? e.message : 'Unknown error'}`;
-    } finally {
       syncing = false;
       setTimeout(() => { syncStatus = ''; }, 5000);
     }
   }
 
+  function pollSyncStatus() {
+    if (syncInterval) clearInterval(syncInterval);
+    syncInterval = setInterval(async () => {
+      try {
+        const status: SyncStatus = await api.getSyncStatus();
+        syncStatus = status.message;
+        if (!status.running) {
+          syncing = false;
+          if (syncInterval) clearInterval(syncInterval);
+          syncInterval = null;
+          await refreshAll();
+          setTimeout(() => { syncStatus = ''; }, 5000);
+        }
+      } catch {
+        // Keep polling on transient errors
+      }
+    }, 2000);
+  }
+
   onDestroy(() => {
     if (statusInterval) clearInterval(statusInterval);
+    if (syncInterval) clearInterval(syncInterval);
   });
 
   onMount(async () => {
