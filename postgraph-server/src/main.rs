@@ -70,8 +70,15 @@ async fn main() {
                 tracing::error!("Background sync failed: {e}");
                 continue;
             }
-            if let Err(e) = analysis::run_analysis(&bg_state.pool, &bg_state.mercury).await {
-                tracing::error!("Background analysis failed: {e}");
+            loop {
+                match analysis::run_analysis(&bg_state.pool, &bg_state.mercury).await {
+                    Ok(0) => break,
+                    Ok(n) => info!("Background analysis batch: {n} posts"),
+                    Err(e) => {
+                        tracing::error!("Background analysis failed: {e}");
+                        break;
+                    }
+                }
             }
             if let Err(e) = graph::compute_edges_for_recent(&bg_state.pool).await {
                 tracing::error!("Background edge computation failed: {e}");
