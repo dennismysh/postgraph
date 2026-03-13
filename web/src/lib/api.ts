@@ -101,6 +101,11 @@ export interface AnalyzeStatus {
   total: number;
 }
 
+export interface ViewsPoint {
+  date: string;
+  views: number;
+}
+
 export const api = {
   getGraph: () => fetchApi<GraphData>('/api/graph'),
   getPost: (id: string) => fetchApi<PostDetail>(`/api/posts/${id}`),
@@ -116,4 +121,8 @@ export const api = {
     method: 'POST',
   }).then(r => r.json() as Promise<AnalyzeStartResult>),
   getAnalyzeStatus: () => fetchApi<AnalyzeStatus>('/api/analyze/status'),
+  getViews: (since?: string) => {
+    const params = since ? `?since=${encodeURIComponent(since)}` : '';
+    return fetchApi<ViewsPoint[]>(`/api/analytics/views${params}`);
+  },
 };

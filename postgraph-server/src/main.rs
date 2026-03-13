@@ -118,6 +118,7 @@ async fn main() {
         .route("/api/posts/{id}", get(routes::posts::get_post))
         .route("/api/graph", get(routes::graph::get_graph))
         .route("/api/analytics", get(routes::analytics::get_analytics))
+        .route("/api/analytics/views", get(routes::analytics::get_views))
         .route("/api/sync", post(routes::sync::trigger_sync))
         .route("/api/reanalyze", post(routes::reanalyze::trigger_reanalyze))
         .route("/api/analyze", post(routes::analyze::start_analyze))
