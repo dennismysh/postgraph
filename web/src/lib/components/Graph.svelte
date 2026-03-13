@@ -6,8 +6,8 @@
   import { graphInstance, selectedNode, loading } from '$lib/stores/graph';
   import type Graph from 'graphology';
 
-  let container: HTMLDivElement;
-  let sigma: Sigma | null = null;
+  let container: HTMLDivElement = $state(null!);
+  let sigma: Sigma | null = $state(null);
 
   const COLORS = [
     '#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',

@@ -1,9 +1,11 @@
-use axum::{extract::State, Json};
 use crate::db;
 use crate::state::AppState;
 use crate::types::Post;
+use axum::{Json, extract::State};
 
-pub async fn list_posts(State(state): State<AppState>) -> Result<Json<Vec<Post>>, axum::http::StatusCode> {
+pub async fn list_posts(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<Post>>, axum::http::StatusCode> {
     db::get_all_posts(&state.pool)
         .await
         .map(Json)

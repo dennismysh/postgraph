@@ -1,5 +1,5 @@
-use sqlx::PgPool;
 use crate::types::*;
+use sqlx::PgPool;
 
 // -- Posts --
 
@@ -44,11 +44,7 @@ pub async fn get_all_posts(pool: &PgPool) -> sqlx::Result<Vec<Post>> {
         .await
 }
 
-pub async fn mark_post_analyzed(
-    pool: &PgPool,
-    post_id: &str,
-    sentiment: f32,
-) -> sqlx::Result<()> {
+pub async fn mark_post_analyzed(pool: &PgPool, post_id: &str, sentiment: f32) -> sqlx::Result<()> {
     sqlx::query("UPDATE posts SET analyzed_at = NOW(), sentiment = $1 WHERE id = $2")
         .bind(sentiment)
         .bind(post_id)
@@ -165,10 +161,7 @@ pub async fn get_sync_state(pool: &PgPool) -> sqlx::Result<SyncState> {
         .await
 }
 
-pub async fn update_sync_state(
-    pool: &PgPool,
-    cursor: Option<&str>,
-) -> sqlx::Result<()> {
+pub async fn update_sync_state(pool: &PgPool, cursor: Option<&str>) -> sqlx::Result<()> {
     sqlx::query("UPDATE sync_state SET last_sync_cursor = $1, last_sync_at = NOW() WHERE id = 1")
         .bind(cursor)
         .execute(pool)

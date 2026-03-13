@@ -10,7 +10,10 @@ mod sync;
 mod threads;
 mod types;
 
-use axum::{middleware, routing::{get, post}, Router};
+use axum::{
+    Router, middleware,
+    routing::{get, post},
+};
 use shuttle_axum::ShuttleAxum;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -23,19 +26,18 @@ use crate::state::AppState;
 use crate::threads::ThreadsClient;
 
 #[shuttle_runtime::main]
-async fn main(
-    #[shuttle_shared_db::Postgres] pool: PgPool,
-) -> ShuttleAxum {
-    sqlx::migrate!().run(&pool).await.expect("migrations failed");
+async fn main(#[shuttle_shared_db::Postgres] pool: PgPool) -> ShuttleAxum {
+    sqlx::migrate!()
+        .run(&pool)
+        .await
+        .expect("migrations failed");
 
-    let threads_token = std::env::var("THREADS_ACCESS_TOKEN")
-        .expect("THREADS_ACCESS_TOKEN must be set");
-    let mercury_key = std::env::var("MERCURY_API_KEY")
-        .expect("MERCURY_API_KEY must be set");
+    let threads_token =
+        std::env::var("THREADS_ACCESS_TOKEN").expect("THREADS_ACCESS_TOKEN must be set");
+    let mercury_key = std::env::var("MERCURY_API_KEY").expect("MERCURY_API_KEY must be set");
     let mercury_url = std::env::var("MERCURY_API_URL")
         .unwrap_or_else(|_| "https://api.inceptionlabs.ai/v1".to_string());
-    let api_key = std::env::var("POSTGRAPH_API_KEY")
-        .expect("POSTGRAPH_API_KEY must be set");
+    let api_key = std::env::var("POSTGRAPH_API_KEY").expect("POSTGRAPH_API_KEY must be set");
 
     let state = AppState {
         pool: pool.clone(),
@@ -75,7 +77,10 @@ async fn main(
         .route("/api/graph", get(routes::graph::get_graph))
         .route("/api/analytics", get(routes::analytics::get_analytics))
         .route("/api/sync", post(routes::sync::trigger_sync))
-        .layer(middleware::from_fn_with_state(state.clone(), auth::require_api_key));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_api_key,
+        ));
 
     let router = Router::new()
         .route("/health", get(|| async { "ok" }))

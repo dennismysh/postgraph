@@ -2,14 +2,15 @@
   import { filters, resetFilters } from '$lib/stores/filters';
   import { graphData } from '$lib/stores/graph';
 
-  let allTopics: string[] = [];
-  $: if ($graphData) {
+  let allTopics = $derived.by(() => {
+    const data = $graphData;
+    if (!data) return [];
     const topicSet = new Set<string>();
-    for (const node of $graphData.nodes) {
+    for (const node of data.nodes) {
       for (const t of node.topics) topicSet.add(t);
     }
-    allTopics = [...topicSet].sort();
-  }
+    return [...topicSet].sort();
+  });
 
   function toggleTopic(topic: string) {
     filters.update(f => {
@@ -47,14 +48,14 @@
       <button
         class="topic-chip"
         class:active={$filters.topics.includes(topic)}
-        on:click={() => toggleTopic(topic)}
+        onclick={() => toggleTopic(topic)}
       >
         {topic}
       </button>
     {/each}
   </div>
 
-  <button class="reset" on:click={resetFilters}>Reset</button>
+  <button class="reset" onclick={resetFilters}>Reset</button>
 </div>
 
 <style>

@@ -1,6 +1,6 @@
+use crate::error::AppError;
 use reqwest::Client;
 use serde::Deserialize;
-use crate::error::AppError;
 
 const BASE_URL: &str = "https://graph.threads.net/v1.0";
 

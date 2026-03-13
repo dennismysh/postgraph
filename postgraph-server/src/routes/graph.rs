@@ -1,7 +1,7 @@
-use axum::{extract::State, Json};
-use serde::Serialize;
 use crate::db;
 use crate::state::AppState;
+use axum::{Json, extract::State};
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct GraphNode {
@@ -26,7 +26,9 @@ pub struct GraphData {
     pub edges: Vec<GraphEdge>,
 }
 
-pub async fn get_graph(State(state): State<AppState>) -> Result<Json<GraphData>, axum::http::StatusCode> {
+pub async fn get_graph(
+    State(state): State<AppState>,
+) -> Result<Json<GraphData>, axum::http::StatusCode> {
     let posts = db::get_all_posts(&state.pool)
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;

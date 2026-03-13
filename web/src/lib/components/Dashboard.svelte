@@ -3,11 +3,11 @@
   import Chart from 'chart.js/auto';
   import { api, type AnalyticsData } from '$lib/api';
 
-  let analytics: AnalyticsData | null = null;
-  let engagementCanvas: HTMLCanvasElement;
-  let topicsCanvas: HTMLCanvasElement;
-  let engagementChart: Chart | null = null;
-  let topicsChart: Chart | null = null;
+  let analytics: AnalyticsData | null = $state(null);
+  let engagementCanvas: HTMLCanvasElement = $state(null!);
+  let topicsCanvas: HTMLCanvasElement = $state(null!);
+  let engagementChart: Chart | null = $state(null);
+  let topicsChart: Chart | null = $state(null);
 
   onMount(async () => {
     analytics = await api.getAnalytics();

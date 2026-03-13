@@ -1,6 +1,6 @@
+use crate::error::AppError;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use crate::error::AppError;
 
 pub struct MercuryClient {
     client: Client,
@@ -144,8 +144,9 @@ Respond with ONLY valid JSON in this exact format:
             .unwrap_or(content.trim())
             .trim();
 
-        let analysis: AnalysisResponse =
-            serde_json::from_str(json_str).map_err(|e| AppError::MercuryApi(format!("Failed to parse response: {e}. Raw: {json_str}")))?;
+        let analysis: AnalysisResponse = serde_json::from_str(json_str).map_err(|e| {
+            AppError::MercuryApi(format!("Failed to parse response: {e}. Raw: {json_str}"))
+        })?;
 
         Ok(analysis)
     }

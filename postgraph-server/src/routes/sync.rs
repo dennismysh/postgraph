@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde::Serialize;
 use tracing::info;
 
@@ -19,12 +19,10 @@ pub async fn trigger_sync(
 ) -> Result<Json<SyncResult>, axum::http::StatusCode> {
     info!("Manual sync triggered");
 
-    let posts_synced = run_sync(&state.pool, &state.threads)
-        .await
-        .map_err(|e| {
-            tracing::error!("Sync failed: {e}");
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let posts_synced = run_sync(&state.pool, &state.threads).await.map_err(|e| {
+        tracing::error!("Sync failed: {e}");
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let posts_analyzed = analysis::run_analysis(&state.pool, &state.mercury)
         .await

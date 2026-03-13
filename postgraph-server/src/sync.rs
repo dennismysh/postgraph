@@ -74,7 +74,10 @@ pub async fn run_sync(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppE
                     .await?;
                 }
                 Err(AppError::RateLimited(secs)) => {
-                    warn!("Rate limited fetching insights for {}, waiting {}s", tp.id, secs);
+                    warn!(
+                        "Rate limited fetching insights for {}, waiting {}s",
+                        tp.id, secs
+                    );
                     tokio::time::sleep(Duration::from_secs(secs)).await;
                 }
                 Err(e) => {
@@ -97,7 +100,11 @@ pub async fn run_sync(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppE
             .and_then(|p| p.cursors.as_ref())
             .and_then(|c| c.after.clone());
 
-        let has_next = response.paging.as_ref().and_then(|p| p.next.as_ref()).is_some();
+        let has_next = response
+            .paging
+            .as_ref()
+            .and_then(|p| p.next.as_ref())
+            .is_some();
 
         db::update_sync_state(pool, next_cursor.as_deref()).await?;
 

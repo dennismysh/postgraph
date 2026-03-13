@@ -18,11 +18,7 @@ pub async fn run_analysis(pool: &PgPool, mercury: &MercuryClient) -> Result<u32,
 
     let posts_for_llm: Vec<(String, String)> = unanalyzed
         .iter()
-        .filter_map(|p| {
-            p.text
-                .as_ref()
-                .map(|text| (p.id.clone(), text.clone()))
-        })
+        .filter_map(|p| p.text.as_ref().map(|text| (p.id.clone(), text.clone())))
         .collect();
 
     if posts_for_llm.is_empty() {
