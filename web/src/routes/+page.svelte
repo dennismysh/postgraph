@@ -5,19 +5,22 @@
   import { loadGraph, selectedNode, graphData } from '$lib/stores/graph';
   import { api, type PostDetail } from '$lib/api';
 
-  let postDetail: PostDetail | null = null;
-  let detailLoading = false;
-  let detailError: string | null = null;
+  let postDetail: PostDetail | null = $state(null);
+  let detailLoading = $state(false);
+  let detailError: string | null = $state(null);
 
   onMount(() => {
     loadGraph();
   });
 
-  $: if ($selectedNode) {
-    fetchPostDetail($selectedNode);
-  } else {
-    postDetail = null;
-  }
+  $effect(() => {
+    const node = $selectedNode;
+    if (node) {
+      fetchPostDetail(node);
+    } else {
+      postDetail = null;
+    }
+  });
 
   async function fetchPostDetail(id: string) {
     detailLoading = true;
@@ -60,7 +63,7 @@
       <aside class="detail-panel">
         <div class="detail-header">
           <h2>Post Detail</h2>
-          <button class="close-btn" on:click={closeDetail}>&times;</button>
+          <button class="close-btn" onclick={closeDetail}>&times;</button>
         </div>
 
         {#if detailLoading}
