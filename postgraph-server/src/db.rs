@@ -44,6 +44,23 @@ pub async fn get_all_posts(pool: &PgPool) -> sqlx::Result<Vec<Post>> {
         .await
 }
 
+pub async fn get_post_by_id(pool: &PgPool, post_id: &str) -> sqlx::Result<Option<Post>> {
+    sqlx::query_as::<_, Post>("SELECT * FROM posts WHERE id = $1")
+        .bind(post_id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn get_topics_for_post(pool: &PgPool, post_id: &str) -> sqlx::Result<Vec<String>> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT t.name FROM post_topics pt JOIN topics t ON pt.topic_id = t.id WHERE pt.post_id = $1 ORDER BY pt.weight DESC",
+    )
+    .bind(post_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(name,)| name).collect())
+}
+
 pub async fn mark_post_analyzed(pool: &PgPool, post_id: &str, sentiment: f32) -> sqlx::Result<()> {
     sqlx::query("UPDATE posts SET analyzed_at = NOW(), sentiment = $1 WHERE id = $2")
         .bind(sentiment)
