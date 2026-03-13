@@ -93,6 +93,8 @@ export interface SyncStartResult {
 export interface SyncStatus {
   running: boolean;
   message: string;
+  synced: number;
+  total: number;
 }
 
 export interface ReanalyzeResult {
