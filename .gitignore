@@ -1,0 +1,6 @@
+/target
+.env
+*.swp
+web/node_modules
+web/.svelte-kit
+web/build
