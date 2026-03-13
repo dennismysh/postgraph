@@ -91,6 +91,11 @@
             {/if}
           </div>
 
+          <div class="views-stat">
+            <span class="views-value">{formatNumber(postDetail.views)}</span>
+            <span class="views-label">Views</span>
+          </div>
+
           <div class="stats-grid">
             <div class="stat">
               <span class="stat-value">{formatNumber(postDetail.likes)}</span>
@@ -206,6 +211,25 @@
     width: 100%;
     display: block;
     border-radius: 8px;
+  }
+
+  .views-stat {
+    background: #252525;
+    border-radius: 8px;
+    padding: 0.75rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .views-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  .views-label {
+    font-size: 0.8rem;
+    color: #888;
   }
 
   .stats-grid {

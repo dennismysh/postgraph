@@ -67,6 +67,7 @@ export interface PostDetail {
   media_url: string | null;
   timestamp: string;
   permalink: string | null;
+  views: number;
   likes: number;
   replies_count: number;
   reposts: number;

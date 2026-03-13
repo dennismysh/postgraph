@@ -56,6 +56,7 @@ pub struct InsightsResponse {
 
 #[derive(Debug, Default)]
 pub struct PostInsights {
+    pub views: i32,
     pub likes: i32,
     pub replies: i32,
     pub reposts: i32,
@@ -96,7 +97,7 @@ impl ThreadsClient {
 
     pub async fn get_post_insights(&self, post_id: &str) -> Result<PostInsights, AppError> {
         let url = format!(
-            "{}/{}/insights?metric=likes,replies,reposts,quotes&access_token={}",
+            "{}/{}/insights?metric=views,likes,replies,reposts,quotes&access_token={}",
             BASE_URL, post_id, self.access_token
         );
 
@@ -127,6 +128,7 @@ impl ThreadsClient {
                 .unwrap_or(0) as i32;
 
             match item.name.as_str() {
+                "views" => insights.views = value,
                 "likes" => insights.likes = value,
                 "replies" => insights.replies = value,
                 "reposts" => insights.reposts = value,
