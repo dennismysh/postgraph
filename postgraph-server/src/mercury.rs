@@ -106,7 +106,7 @@ Respond with ONLY valid JSON in this exact format:
         );
 
         let request = ChatRequest {
-            model: "mercury-coder-small".to_string(),
+            model: "mercury-2".to_string(),
             messages: vec![ChatMessage {
                 role: "user".to_string(),
                 content: prompt,
