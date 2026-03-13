@@ -16,6 +16,7 @@ use axum::{
 };
 use sqlx::PgPool;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tower_http::cors::{Any, CorsLayer};
@@ -56,6 +57,9 @@ async fn main() {
         threads: Arc::new(ThreadsClient::new(threads_token)),
         mercury: Arc::new(MercuryClient::new(mercury_key, mercury_url)),
         api_key,
+        analysis_running: Arc::new(AtomicBool::new(false)),
+        analysis_progress: Arc::new(AtomicU32::new(0)),
+        analysis_total: Arc::new(AtomicU32::new(0)),
     };
 
     // Spawn background sync task (first run after 30s delay, then every 15 min)
@@ -70,13 +74,25 @@ async fn main() {
                 tracing::error!("Background sync failed: {e}");
                 continue;
             }
+            let mut consecutive_failures = 0;
             loop {
                 match analysis::run_analysis(&bg_state.pool, &bg_state.mercury).await {
                     Ok(0) => break,
-                    Ok(n) => info!("Background analysis batch: {n} posts"),
+                    Ok(n) => {
+                        info!("Background analysis batch: {n} posts");
+                        consecutive_failures = 0;
+                    }
                     Err(e) => {
-                        tracing::error!("Background analysis failed: {e}");
-                        break;
+                        consecutive_failures += 1;
+                        tracing::error!(
+                            "Background analysis failed (attempt {consecutive_failures}): {e}"
+                        );
+                        if consecutive_failures >= 3 {
+                            tracing::error!("Stopping analysis after 3 consecutive failures");
+                            break;
+                        }
+                        // Brief pause before retrying
+                        tokio::time::sleep(Duration::from_secs(2)).await;
                     }
                 }
             }
@@ -103,6 +119,8 @@ async fn main() {
         .route("/api/analytics", get(routes::analytics::get_analytics))
         .route("/api/sync", post(routes::sync::trigger_sync))
         .route("/api/reanalyze", post(routes::reanalyze::trigger_reanalyze))
+        .route("/api/analyze", post(routes::analyze::start_analyze))
+        .route("/api/analyze/status", get(routes::analyze::analyze_status))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,

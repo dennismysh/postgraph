@@ -72,6 +72,17 @@ export interface ReanalyzeResult {
   edges_computed: number;
 }
 
+export interface AnalyzeStartResult {
+  started: boolean;
+  message: string;
+}
+
+export interface AnalyzeStatus {
+  running: boolean;
+  analyzed: number;
+  total: number;
+}
+
 export const api = {
   getGraph: () => fetchApi<GraphData>('/api/graph'),
   getPosts: () => fetchApi<Post[]>('/api/posts'),
@@ -82,4 +93,8 @@ export const api = {
   triggerReanalyze: () => fetch('/api/reanalyze', {
     method: 'POST',
   }).then(r => r.json() as Promise<ReanalyzeResult>),
+  startAnalyze: () => fetch('/api/analyze', {
+    method: 'POST',
+  }).then(r => r.json() as Promise<AnalyzeStartResult>),
+  getAnalyzeStatus: () => fetchApi<AnalyzeStatus>('/api/analyze/status'),
 };
