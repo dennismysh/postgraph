@@ -8,6 +8,81 @@ use crate::error::AppError;
 use crate::threads::{ThreadsClient, ThreadsPost};
 use crate::types::Post;
 
+/// Refresh insights metrics for all existing posts in the database.
+/// Returns the number of posts successfully updated.
+pub async fn refresh_all_metrics(
+    pool: &PgPool,
+    client: &ThreadsClient,
+) -> Result<u32, AppError> {
+    let post_ids = db::get_all_post_ids(pool).await?;
+    let total = post_ids.len();
+    info!("Refreshing metrics for {total} existing posts");
+
+    let mut updated: u32 = 0;
+
+    for (i, post_id) in post_ids.iter().enumerate() {
+        let mut retries = 0u32;
+        loop {
+            match client.get_post_insights(post_id).await {
+                Ok(insights) => {
+                    sqlx::query(
+                        "UPDATE posts SET views = $1, likes = $2, replies_count = $3, reposts = $4, quotes = $5, shares = $6, synced_at = NOW() WHERE id = $7",
+                    )
+                    .bind(insights.views)
+                    .bind(insights.likes)
+                    .bind(insights.replies)
+                    .bind(insights.reposts)
+                    .bind(insights.quotes)
+                    .bind(insights.shares)
+                    .bind(post_id)
+                    .execute(pool)
+                    .await?;
+
+                    db::insert_engagement_snapshot(
+                        pool,
+                        post_id,
+                        insights.views,
+                        insights.likes,
+                        insights.replies,
+                        insights.reposts,
+                        insights.quotes,
+                    )
+                    .await?;
+
+                    updated += 1;
+                    break;
+                }
+                Err(AppError::RateLimited(secs)) => {
+                    retries += 1;
+                    if retries > 3 {
+                        warn!("Rate limited too many times for {post_id}, skipping");
+                        break;
+                    }
+                    warn!(
+                        "Rate limited refreshing metrics for {post_id}, waiting {secs}s (attempt {retries}/3)"
+                    );
+                    tokio::time::sleep(Duration::from_secs(secs)).await;
+                }
+                Err(e) => {
+                    // Don't overwrite existing metrics — just skip this post
+                    warn!("Failed to refresh metrics for {post_id}: {e}");
+                    break;
+                }
+            }
+        }
+
+        // Throttle between API calls
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        if (i + 1) % 25 == 0 {
+            info!("Metrics refresh progress: {}/{total}", i + 1);
+        }
+    }
+
+    info!("Metrics refresh complete: {updated}/{total} posts updated");
+    Ok(updated)
+}
+
 fn parse_threads_timestamp(ts: &str) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(ts)
         .map(|dt| dt.with_timezone(&Utc))
@@ -94,6 +169,7 @@ pub async fn run_sync(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppE
                         tokio::time::sleep(Duration::from_secs(secs)).await;
                     }
                     Err(e) => {
+                        // Don't overwrite existing metrics — leave them as-is
                         warn!("Failed to fetch insights for {}: {}", tp.id, e);
                         break;
                     }

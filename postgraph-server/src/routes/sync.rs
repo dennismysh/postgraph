@@ -5,11 +5,12 @@ use tracing::info;
 use crate::analysis;
 use crate::graph;
 use crate::state::AppState;
-use crate::sync::run_sync;
+use crate::sync::{refresh_all_metrics, run_sync};
 
 #[derive(Serialize)]
 pub struct SyncResult {
     pub posts_synced: u32,
+    pub metrics_refreshed: u32,
     pub posts_analyzed: u32,
     pub edges_computed: u32,
 }
@@ -23,6 +24,14 @@ pub async fn trigger_sync(
         tracing::error!("Sync failed: {e}");
         axum::http::StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    // Refresh metrics (views, likes, etc.) for all existing posts
+    let metrics_refreshed = refresh_all_metrics(&state.pool, &state.threads)
+        .await
+        .map_err(|e| {
+            tracing::error!("Metrics refresh failed: {e}");
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     // Loop analysis until all posts are analyzed (backfill)
     let mut posts_analyzed: u32 = 0;
@@ -58,6 +67,7 @@ pub async fn trigger_sync(
 
     Ok(Json(SyncResult {
         posts_synced,
+        metrics_refreshed,
         posts_analyzed,
         edges_computed,
     }))
