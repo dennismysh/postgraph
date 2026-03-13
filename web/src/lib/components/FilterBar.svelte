@@ -32,7 +32,7 @@
     syncStatus = 'Syncing...';
     try {
       const result = await api.triggerSync();
-      syncStatus = `Done! ${result.posts_synced} posts synced, ${result.posts_analyzed} analyzed, ${result.edges_computed} edges computed.`;
+      syncStatus = `Done! ${result.posts_synced} synced, ${result.metrics_refreshed} refreshed, ${result.posts_analyzed} analyzed, ${result.edges_computed} edges.`;
       await loadGraph();
     } catch (e) {
       syncStatus = `Failed: ${e instanceof Error ? e.message : 'Unknown error'}`;
