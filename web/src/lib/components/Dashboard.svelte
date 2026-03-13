@@ -100,6 +100,9 @@
   .value { display: block; font-size: 2rem; font-weight: bold; }
   .label { color: #888; font-size: 0.85rem; }
   .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 768px) {
+    .charts { grid-template-columns: 1fr; }
+  }
   .chart-card {
     background: #111;
     border: 1px solid #333;
