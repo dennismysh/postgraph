@@ -1,5 +1,6 @@
 mod db;
 mod error;
+mod sync;
 mod threads;
 mod types;
 
