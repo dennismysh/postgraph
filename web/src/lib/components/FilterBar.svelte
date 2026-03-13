@@ -119,6 +119,8 @@
     display: flex;
     gap: 0.3rem;
     flex-wrap: wrap;
+    max-height: 8rem;
+    overflow-y: auto;
   }
   .topic-chip {
     background: #222;
