@@ -83,8 +83,6 @@ export interface PostDetail {
 export interface SyncResult {
   posts_synced: number;
   metrics_refreshed: number;
-  posts_analyzed: number;
-  edges_computed: number;
 }
 
 export interface ReanalyzeResult {
