@@ -46,5 +46,5 @@
   nav a.active { color: #fff; background: #333; }
   .logout { color: #888; font-size: 0.85rem; }
   .logout:hover { color: #e6194b; }
-  .content { flex: 1; overflow: hidden; }
+  .content { flex: 1; overflow-y: auto; min-height: 0; }
 </style>

@@ -45,6 +45,7 @@
   async function loadViews() {
     const since = getSinceDate(selectedRange);
     viewsData = await api.getViews(since);
+    await tick();
     renderViewsChart();
   }
 
@@ -66,6 +67,7 @@
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: { legend: { labels: { color: '#ccc' } } },
         scales: {
           x: { ticks: { color: '#888' }, grid: { color: '#222' } },
@@ -221,7 +223,9 @@
           {/each}
         </div>
       </div>
-      <canvas bind:this={viewsCanvas}></canvas>
+      <div class="chart-container">
+        <canvas bind:this={viewsCanvas}></canvas>
+      </div>
     </div>
 
     <div class="charts">
@@ -328,6 +332,7 @@
   }
   h3 { margin: 0 0 0.5rem; font-size: 1rem; }
   .views-card { margin-bottom: 1rem; }
+  .chart-container { position: relative; height: 300px; }
   .chart-header {
     display: flex;
     justify-content: space-between;
