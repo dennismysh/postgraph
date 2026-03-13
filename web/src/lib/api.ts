@@ -53,10 +53,12 @@ export interface Post {
   id: string;
   text: string | null;
   timestamp: string;
+  views: number;
   likes: number;
   replies_count: number;
   reposts: number;
   quotes: number;
+  shares: number;
   sentiment: number | null;
 }
 

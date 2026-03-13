@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
-  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint } from '$lib/api';
+  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type Post } from '$lib/api';
 
   let analytics: AnalyticsData | null = $state(null);
   let engagementCanvas: HTMLCanvasElement = $state(null!);
@@ -11,6 +11,7 @@
   let topicsChart: Chart | null = $state(null);
   let viewsChart: Chart | null = $state(null);
   let viewsData: ViewsPoint[] = $state([]);
+  let recentPosts: Post[] = $state([]);
   let analyzeStatus: AnalyzeStatus | null = $state(null);
   let analyzing = $state(false);
   let statusInterval: ReturnType<typeof setInterval> | null = null;
@@ -109,8 +110,14 @@
   });
 
   onMount(async () => {
-    analytics = await api.getAnalytics();
-    analyzeStatus = await api.getAnalyzeStatus();
+    const [analyticsResult, statusResult, postsResult] = await Promise.all([
+      api.getAnalytics(),
+      api.getAnalyzeStatus(),
+      api.getPosts(),
+    ]);
+    analytics = analyticsResult;
+    analyzeStatus = statusResult;
+    recentPosts = postsResult.slice(0, 10);
     if (analyzeStatus?.running) {
       analyzing = true;
       pollStatus();
@@ -227,6 +234,41 @@
         <canvas bind:this={topicsCanvas}></canvas>
       </div>
     </div>
+
+    {#if recentPosts.length > 0}
+      <div class="chart-card posts-card">
+        <h3>Recent Posts</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-post">Post</th>
+                <th class="col-num">Views</th>
+                <th class="col-num">Likes</th>
+                <th class="col-num">Comments</th>
+                <th class="col-num">Quotes</th>
+                <th class="col-num">Shares</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each recentPosts as post}
+                <tr>
+                  <td class="col-post">
+                    <span class="post-text">{post.text?.slice(0, 80) ?? '(no text)'}{(post.text?.length ?? 0) > 80 ? '...' : ''}</span>
+                    <span class="post-date">{new Date(post.timestamp).toLocaleDateString()}</span>
+                  </td>
+                  <td class="col-num">{post.views.toLocaleString()}</td>
+                  <td class="col-num">{post.likes.toLocaleString()}</td>
+                  <td class="col-num">{post.replies_count.toLocaleString()}</td>
+                  <td class="col-num">{post.quotes.toLocaleString()}</td>
+                  <td class="col-num">{post.shares.toLocaleString()}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {/if}
   {:else}
     <p>Loading analytics...</p>
   {/if}
@@ -316,4 +358,39 @@
     color: white;
     border-color: #4363d8;
   }
+  .posts-card { margin-top: 1rem; }
+  .table-wrapper { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  th, td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #222;
+  }
+  th {
+    color: #888;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  td { color: #ccc; }
+  .col-num { text-align: right; white-space: nowrap; }
+  .col-post { max-width: 400px; }
+  .post-text {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .post-date {
+    display: block;
+    color: #666;
+    font-size: 0.75rem;
+    margin-top: 0.15rem;
+  }
+  tbody tr:hover { background: #1a1a1a; }
 </style>
