@@ -140,8 +140,11 @@ export const api = {
     return r.json() as Promise<AnalyzeStartResult>;
   }),
   getAnalyzeStatus: () => fetchApi<AnalyzeStatus>('/api/analyze/status'),
-  getViews: (since?: string) => {
-    const params = since ? `?since=${encodeURIComponent(since)}` : '';
-    return fetchApi<ViewsPoint[]>(`/api/analytics/views${params}`);
+  getViews: (since?: string, grouping?: string) => {
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    if (grouping) params.set('grouping', grouping);
+    const qs = params.toString();
+    return fetchApi<ViewsPoint[]>(`/api/analytics/views${qs ? `?${qs}` : ''}`);
   },
 };
