@@ -86,7 +86,17 @@ pub async fn trigger_reanalyze(
             }
         }
 
+        // Set analysis_running = false FIRST so categorize doesn't conflict
         bg.analysis_running.store(false, Ordering::SeqCst);
+
+        // Auto-trigger categorization after reanalysis
+        info!("Reanalysis complete, running categorization...");
+        bg.categorize_running.store(true, Ordering::SeqCst);
+        if let Err(e) = crate::routes::categorize::run_full_categorization(&bg).await {
+            tracing::error!("Auto-categorization after reanalysis failed: {e}");
+        }
+        bg.categorize_running.store(false, Ordering::SeqCst);
+
         info!("Background reanalysis task finished: {total_analyzed} posts analyzed");
     });
 
