@@ -180,6 +180,10 @@ async fn main() {
         .route("/api/graph/tags", get(routes::graph::get_tag_graph))
         .route("/api/analytics", get(routes::analytics::get_analytics))
         .route("/api/analytics/views", get(routes::analytics::get_views))
+        .route(
+            "/api/posts/{id}/engagement",
+            get(routes::analytics::get_post_engagement),
+        )
         .route("/api/sync", post(routes::sync::trigger_sync))
         .route("/api/sync/status", get(routes::sync::sync_status))
         .route("/api/reanalyze", post(routes::reanalyze::trigger_reanalyze))

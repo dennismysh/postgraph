@@ -119,6 +119,15 @@ export interface ViewsPoint {
   views: number;
 }
 
+export interface PostEngagementPoint {
+  date: string;
+  views: number;
+  likes: number;
+  replies: number;
+  reposts: number;
+  quotes: number;
+}
+
 export interface TagGraphNode {
   id: string;
   label: string;
@@ -211,6 +220,7 @@ export const api = {
     return r.json() as Promise<CategorizeStartResult>;
   }),
   getCategorizeStatus: () => fetchApi<CategorizeStatus>('/api/categorize/status'),
+  getPostEngagement: (id: string) => fetchApi<PostEngagementPoint[]>(`/api/posts/${id}/engagement`),
   getViews: (since?: string, grouping?: string) => {
     const params = new URLSearchParams();
     if (since) params.set('since', since);

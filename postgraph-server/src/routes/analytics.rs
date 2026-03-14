@@ -1,6 +1,6 @@
 use crate::db;
 use crate::state::AppState;
-use axum::{Json, extract::Query, extract::State};
+use axum::{Json, extract::Path, extract::Query, extract::State};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -81,7 +81,8 @@ pub async fn get_views(
            ),
            with_deltas AS (
                SELECT CASE
-                          WHEN prev_views IS NULL THEN post_timestamp
+                          WHEN prev_views IS NULL AND (captured_at - post_timestamp < INTERVAL '1 day')
+                              THEN post_timestamp
                           ELSE captured_at
                       END AS effective_date,
                       GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
@@ -143,10 +144,36 @@ pub async fn get_analytics(
     .collect();
 
     let engagement_over_time: Vec<EngagementPoint> = sqlx::query_as::<_, (String, i64, i64, i64)>(
-        r#"SELECT DATE(captured_at)::text as date,
-           SUM(likes)::bigint, SUM(replies_count)::bigint, SUM(reposts)::bigint
-           FROM engagement_snapshots
-           GROUP BY DATE(captured_at)
+        r#"WITH ordered_snapshots AS (
+               SELECT es.captured_at,
+                      es.post_id,
+                      es.likes,
+                      es.replies_count,
+                      es.reposts,
+                      LAG(es.likes) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_likes,
+                      LAG(es.replies_count) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_replies,
+                      LAG(es.reposts) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_reposts,
+                      p.timestamp AS post_timestamp
+               FROM engagement_snapshots es
+               JOIN posts p ON p.id = es.post_id
+           ),
+           with_deltas AS (
+               SELECT CASE
+                          WHEN prev_likes IS NULL AND (captured_at - post_timestamp < INTERVAL '1 day')
+                              THEN post_timestamp
+                          ELSE captured_at
+                      END AS effective_date,
+                      GREATEST(likes - COALESCE(prev_likes, 0), 0) AS like_delta,
+                      GREATEST(replies_count - COALESCE(prev_replies, 0), 0) AS reply_delta,
+                      GREATEST(reposts - COALESCE(prev_reposts, 0), 0) AS repost_delta
+               FROM ordered_snapshots
+           )
+           SELECT DATE(effective_date)::text AS date,
+                  SUM(like_delta)::bigint,
+                  SUM(reply_delta)::bigint,
+                  SUM(repost_delta)::bigint
+           FROM with_deltas
+           GROUP BY DATE(effective_date)
            ORDER BY date"#,
     )
     .fetch_all(&state.pool)
@@ -170,4 +197,37 @@ pub async fn get_analytics(
         topics: topic_summaries,
         engagement_over_time,
     }))
+}
+
+#[derive(Serialize)]
+pub struct PostEngagementPoint {
+    pub date: String,
+    pub views: i32,
+    pub likes: i32,
+    pub replies: i32,
+    pub reposts: i32,
+    pub quotes: i32,
+}
+
+pub async fn get_post_engagement(
+    State(state): State<AppState>,
+    Path(post_id): Path<String>,
+) -> Result<Json<Vec<PostEngagementPoint>>, axum::http::StatusCode> {
+    let snapshots = db::get_engagement_history(&state.pool, &post_id)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let points: Vec<PostEngagementPoint> = snapshots
+        .into_iter()
+        .map(|s| PostEngagementPoint {
+            date: s.captured_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            views: s.views,
+            likes: s.likes,
+            replies: s.replies_count,
+            reposts: s.reposts,
+            quotes: s.quotes,
+        })
+        .collect();
+
+    Ok(Json(points))
 }
