@@ -185,6 +185,9 @@ async fn main() {
         .route("/api/reanalyze", post(routes::reanalyze::trigger_reanalyze))
         .route("/api/analyze", post(routes::analyze::start_analyze))
         .route("/api/analyze/status", get(routes::analyze::analyze_status))
+        .route("/api/categorize", post(routes::categorize::start_categorize))
+        .route("/api/categorize/status", get(routes::categorize::categorize_status))
+        .route("/api/categories", get(routes::categorize::list_categories))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,
