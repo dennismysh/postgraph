@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { filters, resetFilters } from '$lib/stores/filters';
   import { graphData, loadGraph } from '$lib/stores/graph';
   import { api, type SyncStatus } from '$lib/api';
@@ -14,6 +14,8 @@
     return [...topicSet].sort();
   });
 
+  let categoryList: { name: string; color: string }[] = $state([]);
+
   let syncing = $state(false);
   let syncStatus = $state('');
   let syncStatusData: SyncStatus | null = $state(null);
@@ -21,10 +23,22 @@
   let reanalyzing = $state(false);
   let reanalyzeStatus = $state('');
   let reanalyzeInterval: ReturnType<typeof setInterval> | null = null;
+  let categorizing = $state(false);
+  let categorizeProgress = $state(0);
+  let categorizeTotal = $state(0);
+  let categorizeInterval: ReturnType<typeof setInterval> | null = null;
+
+  onMount(async () => {
+    try {
+      const resp = await api.getCategories();
+      categoryList = resp.categories.map(c => ({ name: c.name, color: c.color || '#888' }));
+    } catch { /* no categories yet */ }
+  });
 
   onDestroy(() => {
     if (syncInterval) clearInterval(syncInterval);
     if (reanalyzeInterval) clearInterval(reanalyzeInterval);
+    if (categorizeInterval) clearInterval(categorizeInterval);
   });
 
   function toggleTopic(topic: string) {
@@ -124,6 +138,40 @@
       }
     }, 3000);
   }
+
+  async function handleRecategorize() {
+    try {
+      categorizing = true;
+      await api.triggerCategorize();
+      pollCategorizeStatus();
+    } catch (e: any) {
+      alert(e.message);
+      categorizing = false;
+    }
+  }
+
+  function pollCategorizeStatus() {
+    if (categorizeInterval) clearInterval(categorizeInterval);
+    categorizeInterval = setInterval(async () => {
+      try {
+        const status = await api.getCategorizeStatus();
+        categorizeProgress = status.progress;
+        categorizeTotal = status.total;
+        if (!status.running) {
+          clearInterval(categorizeInterval!);
+          categorizeInterval = null;
+          categorizing = false;
+          // Reload categories after recategorization
+          const resp = await api.getCategories();
+          categoryList = resp.categories.map(c => ({ name: c.name, color: c.color || '#888' }));
+        }
+      } catch {
+        if (categorizeInterval) clearInterval(categorizeInterval);
+        categorizeInterval = null;
+        categorizing = false;
+      }
+    }, 1000);
+  }
 </script>
 
 <div class="filter-bar">
@@ -147,6 +195,16 @@
     <input type="date" bind:value={$filters.dateTo} />
   </div>
 
+  <div class="filter-group">
+    <label>Category</label>
+    <select bind:value={$filters.category} class="category-select">
+      <option value={null}>All Categories</option>
+      {#each categoryList as cat}
+        <option value={cat.name}>{cat.name}</option>
+      {/each}
+    </select>
+  </div>
+
   <div class="topics">
     {#each allTopics as topic}
       <button
@@ -166,6 +224,9 @@
     </button>
     <button class="reanalyze" onclick={handleReanalyze} disabled={reanalyzing}>
       {reanalyzing ? 'Reanalyzing...' : 'Reanalyze'}
+    </button>
+    <button class="reanalyze" onclick={handleRecategorize} disabled={categorizing}>
+      {categorizing ? `Categorizing... (${categorizeProgress}/${categorizeTotal})` : 'Recategorize'}
     </button>
   </div>
   {#if syncing && syncStatusData}
@@ -213,6 +274,15 @@
     color: #eee;
     padding: 0.2rem;
     border-radius: 4px;
+  }
+  .category-select {
+    background: #1a1a1a;
+    border: 1px solid #444;
+    color: #eee;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
   }
   .topics {
     display: flex;
