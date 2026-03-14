@@ -327,14 +327,25 @@
   });
 
   onMount(async () => {
-    const [analyticsResult, statusResult, postsResult] = await Promise.all([
+    const [analyticsResult, statusResult, postsResult, categoriesResult] = await Promise.all([
       api.getAnalytics(),
       api.getAnalyzeStatus(),
       api.getPosts(),
+      api.getCategories().catch(() => ({ categories: [] })),
     ]);
     analytics = analyticsResult;
     analyzeStatus = statusResult;
     recentPosts = postsResult.slice(0, 10);
+
+    // Build topic-to-color map from categories
+    const topicColorMap: Record<string, string> = {};
+    for (const cat of categoriesResult.categories) {
+      const color = cat.color || '#888';
+      for (const topic of cat.topics) {
+        topicColorMap[topic] = color;
+      }
+    }
+
     if (analyzeStatus?.running) {
       analyzing = true;
       pollStatus();
@@ -377,7 +388,7 @@
         datasets: [{
           label: 'Posts',
           data: topTopics.map(t => t.post_count),
-          backgroundColor: '#4363d8',
+          backgroundColor: topTopics.map(t => topicColorMap[t.name] || '#4363d8'),
         }],
       },
       options: {
