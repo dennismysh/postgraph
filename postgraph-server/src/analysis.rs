@@ -61,16 +61,27 @@ pub async fn run_analysis(pool: &PgPool, mercury: &MercuryClient) -> Result<u32,
 
             // Incremental category assignment: if topic has no category and categories exist
             if topic.category_id.is_none() && !cat_pairs.is_empty() {
-                match mercury.assign_topic_category(&topic_assignment.name, &cat_pairs).await {
+                match mercury
+                    .assign_topic_category(&topic_assignment.name, &cat_pairs)
+                    .await
+                {
                     Ok(assign_resp) => {
-                        if let Some(cat) = categories.iter().find(|c| c.name == assign_resp.category) {
-                            if let Err(e) = db::set_topic_category(pool, &topic_assignment.name, cat.id).await {
-                                warn!("Failed to set category for topic '{}': {e}", topic_assignment.name);
-                            }
+                        if let Some(cat) =
+                            categories.iter().find(|c| c.name == assign_resp.category)
+                            && let Err(e) =
+                                db::set_topic_category(pool, &topic_assignment.name, cat.id).await
+                        {
+                            warn!(
+                                "Failed to set category for topic '{}': {e}",
+                                topic_assignment.name
+                            );
                         }
                     }
                     Err(e) => {
-                        warn!("Incremental category assignment failed for '{}': {e}", topic_assignment.name);
+                        warn!(
+                            "Incremental category assignment failed for '{}': {e}",
+                            topic_assignment.name
+                        );
                     }
                 }
             }

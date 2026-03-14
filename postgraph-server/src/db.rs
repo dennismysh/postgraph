@@ -2,9 +2,8 @@ use crate::types::*;
 use sqlx::PgPool;
 
 pub const CATEGORY_COLORS: &[&str] = &[
-    "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
-    "#42d4f4", "#f032e6", "#bfef45", "#fabed4", "#469990",
-    "#dcbeff", "#9A6324", "#800000", "#aaffc3", "#808000",
+    "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#42d4f4", "#f032e6", "#bfef45",
+    "#fabed4", "#469990", "#dcbeff", "#9A6324", "#800000", "#aaffc3", "#808000",
 ];
 
 // -- Posts --
@@ -195,12 +194,11 @@ pub async fn get_categories_with_topics(
     let categories = get_all_categories(pool).await?;
     let mut result = Vec::new();
     for cat in categories {
-        let topic_names: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM topics WHERE category_id = $1 ORDER BY name",
-        )
-        .bind(cat.id)
-        .fetch_all(pool)
-        .await?;
+        let topic_names: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM topics WHERE category_id = $1 ORDER BY name")
+                .bind(cat.id)
+                .fetch_all(pool)
+                .await?;
         let names: Vec<String> = topic_names.into_iter().map(|(n,)| n).collect();
         result.push((cat, names));
     }

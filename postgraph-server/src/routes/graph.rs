@@ -4,6 +4,16 @@ use axum::{Json, extract::State};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
+// (topic_name, post_ids, total_engagement, category_id, category_name, category_color)
+type TopicEntry = (
+    String,
+    Vec<String>,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
 #[derive(Serialize, Clone)]
 pub struct NodeCategory {
     pub name: String,
@@ -95,10 +105,7 @@ pub async fn get_graph(
     let mut category_weights: HashMap<String, HashMap<String, (f32, String)>> = HashMap::new();
 
     for (pid, name, weight, cat_name, cat_color) in &all_post_topics {
-        topic_map
-            .entry(pid.clone())
-            .or_default()
-            .push(name.clone());
+        topic_map.entry(pid.clone()).or_default().push(name.clone());
 
         if let (Some(cat), Some(color)) = (cat_name, cat_color) {
             category_weights
@@ -115,16 +122,18 @@ pub async fn get_graph(
         .filter(|p| p.analyzed_at.is_some())
         .filter_map(|p| {
             // Compute dominant category for this post
-            let dominant_category = category_weights
-                .get(&p.id)
-                .and_then(|cats| {
-                    cats.iter()
-                        .max_by(|a, b| a.1.0.partial_cmp(&b.1.0).unwrap_or(std::cmp::Ordering::Equal))
-                        .map(|(name, (_, color))| NodeCategory {
-                            name: name.clone(),
-                            color: color.clone(),
-                        })
-                });
+            let dominant_category = category_weights.get(&p.id).and_then(|cats| {
+                cats.iter()
+                    .max_by(|a, b| {
+                        a.1.0
+                            .partial_cmp(&b.1.0)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .map(|(name, (_, color))| NodeCategory {
+                        name: name.clone(),
+                        color: color.clone(),
+                    })
+            });
 
             // Apply category filter
             if let Some(ref filter_cat) = query.category {
@@ -134,10 +143,7 @@ pub async fn get_graph(
                 }
             }
 
-            let topics: Vec<String> = topic_map
-                .get(&p.id)
-                .cloned()
-                .unwrap_or_default();
+            let topics: Vec<String> = topic_map.get(&p.id).cloned().unwrap_or_default();
 
             let engagement = (p.likes + p.replies_count + p.reposts + p.quotes) as f32;
             let size = (engagement + 1.0).ln().max(0.0) + 1.0;
@@ -160,7 +166,10 @@ pub async fn get_graph(
 
     let graph_edges: Vec<GraphEdge> = edges
         .iter()
-        .filter(|e| valid_ids.contains(e.source_post_id.as_str()) && valid_ids.contains(e.target_post_id.as_str()))
+        .filter(|e| {
+            valid_ids.contains(e.source_post_id.as_str())
+                && valid_ids.contains(e.target_post_id.as_str())
+        })
         .map(|e| GraphEdge {
             source: e.source_post_id.clone(),
             target: e.target_post_id.clone(),
@@ -194,14 +203,23 @@ pub async fn get_tag_graph(
     .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Build topic -> (name, post_ids, total_engagement, category_id, category_name, category_color)
-    let mut topic_data: HashMap<String, (String, Vec<String>, i64, Option<String>, Option<String>, Option<String>)> = HashMap::new();
+    let mut topic_data: HashMap<String, TopicEntry> = HashMap::new();
     // Build post_id -> set of topic_ids (for edge computation)
     let mut post_topics_map: HashMap<String, Vec<String>> = HashMap::new();
 
-    for (topic_id, topic_name, post_id, engagement, category_id, category_name, category_color) in &rows {
-        let entry = topic_data
-            .entry(topic_id.clone())
-            .or_insert_with(|| (topic_name.clone(), Vec::new(), 0, category_id.clone(), category_name.clone(), category_color.clone()));
+    for (topic_id, topic_name, post_id, engagement, category_id, category_name, category_color) in
+        &rows
+    {
+        let entry = topic_data.entry(topic_id.clone()).or_insert_with(|| {
+            (
+                topic_name.clone(),
+                Vec::new(),
+                0,
+                category_id.clone(),
+                category_name.clone(),
+                category_color.clone(),
+            )
+        });
         entry.1.push(post_id.clone());
         entry.2 += engagement;
 
@@ -214,16 +232,18 @@ pub async fn get_tag_graph(
     // Build nodes
     let nodes: Vec<TagGraphNode> = topic_data
         .iter()
-        .map(|(topic_id, (name, post_ids, total_eng, cat_id, cat_name, cat_color))| TagGraphNode {
-            id: topic_id.clone(),
-            label: name.clone(),
-            post_count: post_ids.len() as i32,
-            total_engagement: *total_eng,
-            post_ids: post_ids.clone(),
-            category_id: cat_id.clone(),
-            category_name: cat_name.clone(),
-            category_color: cat_color.clone(),
-        })
+        .map(
+            |(topic_id, (name, post_ids, total_eng, cat_id, cat_name, cat_color))| TagGraphNode {
+                id: topic_id.clone(),
+                label: name.clone(),
+                post_count: post_ids.len() as i32,
+                total_engagement: *total_eng,
+                post_ids: post_ids.clone(),
+                category_id: cat_id.clone(),
+                category_name: cat_name.clone(),
+                category_color: cat_color.clone(),
+            },
+        )
         .collect();
 
     // Build edges: topics that co-occur on the same post

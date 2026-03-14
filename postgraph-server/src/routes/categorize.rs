@@ -33,9 +33,7 @@ pub struct ListCategoriesResponse {
     pub categories: Vec<CategoryWithTopics>,
 }
 
-pub async fn start_categorize(
-    State(state): State<AppState>,
-) -> Json<CategorizeStartResult> {
+pub async fn start_categorize(State(state): State<AppState>) -> Json<CategorizeStartResult> {
     // Check if analysis is running
     if state.analysis_running.load(Ordering::SeqCst) {
         return Json(CategorizeStartResult {
@@ -100,12 +98,7 @@ pub async fn run_full_categorization(state: &AppState) -> Result<(), crate::erro
 
     let topic_pairs: Vec<(String, String)> = topics
         .iter()
-        .map(|t| {
-            (
-                t.name.clone(),
-                t.description.clone().unwrap_or_default(),
-            )
-        })
+        .map(|t| (t.name.clone(), t.description.clone().unwrap_or_default()))
         .collect();
 
     state
@@ -145,10 +138,11 @@ pub async fn run_full_categorization(state: &AppState) -> Result<(), crate::erro
         .await?;
 
         for topic_name in &category_group.topics {
-            if let Err(e) =
-                db::set_topic_category(&state.pool, topic_name, upserted.id).await
-            {
-                tracing::warn!("Failed to assign topic '{topic_name}' to category '{}': {e}", category_group.name);
+            if let Err(e) = db::set_topic_category(&state.pool, topic_name, upserted.id).await {
+                tracing::warn!(
+                    "Failed to assign topic '{topic_name}' to category '{}': {e}",
+                    category_group.name
+                );
             }
         }
 
