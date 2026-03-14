@@ -8,8 +8,9 @@ pub const CATEGORY_COLORS: &[&str] = &[
 
 // -- Posts --
 
-pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
-    sqlx::query(
+/// Upsert a post. Returns `true` if this was a new insert, `false` if it updated an existing row.
+pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<bool> {
+    let row: (bool,) = sqlx::query_as(
         r#"INSERT INTO posts (id, text, media_type, media_url, timestamp, permalink, views, likes, replies_count, reposts, quotes, shares, synced_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
            ON CONFLICT (id) DO UPDATE SET
@@ -18,7 +19,8 @@ pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
              media_url = COALESCE(EXCLUDED.media_url, posts.media_url),
              permalink = COALESCE(EXCLUDED.permalink, posts.permalink),
              timestamp = EXCLUDED.timestamp,
-             synced_at = NOW()"#,
+             synced_at = NOW()
+           RETURNING (xmax = 0) AS inserted"#,
     )
     .bind(&post.id)
     .bind(&post.text)
@@ -32,9 +34,9 @@ pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
     .bind(post.reposts)
     .bind(post.quotes)
     .bind(post.shares)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
-    Ok(())
+    Ok(row.0)
 }
 
 pub async fn get_unanalyzed_posts(pool: &PgPool, limit: i64) -> sqlx::Result<Vec<Post>> {
@@ -259,9 +261,15 @@ pub async fn insert_engagement_snapshot(
     reposts: i32,
     quotes: i32,
 ) -> sqlx::Result<()> {
+    // Skip if a snapshot for this post already exists within the last 10 minutes
+    // to avoid near-duplicate entries from re-syncs.
     sqlx::query(
         r#"INSERT INTO engagement_snapshots (post_id, views, likes, replies_count, reposts, quotes)
-           VALUES ($1, $2, $3, $4, $5, $6)"#,
+           SELECT $1, $2, $3, $4, $5, $6
+           WHERE NOT EXISTS (
+               SELECT 1 FROM engagement_snapshots
+               WHERE post_id = $1 AND captured_at > NOW() - INTERVAL '10 minutes'
+           )"#,
     )
     .bind(post_id)
     .bind(views)
