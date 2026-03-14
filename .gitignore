@@ -11,3 +11,6 @@ web/build
 
 # Local Netlify folder
 .netlify
+
+# Superpowers brainstorming
+.superpowers
