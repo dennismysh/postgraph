@@ -81,8 +81,7 @@ pub async fn get_views(
            ),
            with_deltas AS (
                SELECT CASE
-                          WHEN prev_views IS NULL AND (captured_at - post_timestamp < INTERVAL '1 day')
-                              THEN post_timestamp
+                          WHEN prev_views IS NULL THEN post_timestamp
                           ELSE captured_at
                       END AS effective_date,
                       GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
@@ -159,8 +158,7 @@ pub async fn get_analytics(
            ),
            with_deltas AS (
                SELECT CASE
-                          WHEN prev_likes IS NULL AND (captured_at - post_timestamp < INTERVAL '1 day')
-                              THEN post_timestamp
+                          WHEN prev_likes IS NULL THEN post_timestamp
                           ELSE captured_at
                       END AS effective_date,
                       GREATEST(likes - COALESCE(prev_likes, 0), 0) AS like_delta,

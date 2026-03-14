@@ -174,7 +174,7 @@ pub async fn run_sync(
 
         for tp in &response.data {
             let post = threads_post_to_post(tp);
-            db::upsert_post(pool, &post).await?;
+            let is_new = db::upsert_post(pool, &post).await?;
 
             // Fetch insights with throttling and retry on rate limit
             let mut retries = 0u32;
@@ -194,16 +194,20 @@ pub async fn run_sync(
                         .execute(pool)
                         .await?;
 
-                        db::insert_engagement_snapshot(
-                            pool,
-                            &tp.id,
-                            insights.views,
-                            insights.likes,
-                            insights.replies,
-                            insights.reposts,
-                            insights.quotes,
-                        )
-                        .await?;
+                        // Only create engagement snapshots for newly discovered posts.
+                        // Existing posts get their snapshots via refresh_all_metrics().
+                        if is_new {
+                            db::insert_engagement_snapshot(
+                                pool,
+                                &tp.id,
+                                insights.views,
+                                insights.likes,
+                                insights.replies,
+                                insights.reposts,
+                                insights.quotes,
+                            )
+                            .await?;
+                        }
                         break;
                     }
                     Err(AppError::RateLimited(secs)) => {
