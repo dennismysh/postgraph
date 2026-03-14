@@ -26,6 +26,15 @@ pub struct Topic {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
+    pub category_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Category {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
