@@ -25,6 +25,8 @@ export async function loadGraph() {
         topics: node.topics,
         timestamp: node.timestamp,
         engagement: node.engagement,
+        category_name: node.category?.name ?? null,
+        category_color: node.category?.color ?? null,
         x: Math.random() * 100,
         y: Math.random() * 100,
       });

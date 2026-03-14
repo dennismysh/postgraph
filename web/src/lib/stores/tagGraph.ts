@@ -25,6 +25,8 @@ export async function loadTagGraph() {
         post_count: node.post_count,
         total_engagement: node.total_engagement,
         post_ids: node.post_ids,
+        category_name: node.category_name,
+        category_color: node.category_color,
         x: Math.random() * 100,
         y: Math.random() * 100,
       });

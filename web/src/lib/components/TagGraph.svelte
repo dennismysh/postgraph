@@ -2,38 +2,37 @@
   import { onMount, onDestroy } from 'svelte';
   import Sigma from 'sigma';
   import forceAtlas2 from 'graphology-layout-forceatlas2';
-  import louvain from 'graphology-communities-louvain';
   import { tagGraphInstance, selectedTagNode, tagLoading, tagError } from '$lib/stores/tagGraph';
   import type Graph from 'graphology';
 
   let container: HTMLDivElement = $state(null!);
   let sigma: Sigma | null = $state(null);
+  let categories: { name: string; color: string }[] = $state([]);
 
   function isMobile(): boolean {
     return typeof window !== 'undefined' && window.innerWidth < 768;
   }
 
-  const COLORS = [
-    '#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',
-    '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990',
-  ];
-
   function initSigma(graph: Graph) {
     try {
       if (sigma) sigma.kill();
 
-      if (graph.size > 0) {
-        louvain.assign(graph);
-      }
-
       const mobile = isMobile();
       const sizeMultiplier = mobile ? 3 : 1;
       graph.forEachNode((node, attrs) => {
-        const community = (attrs as any).community || 0;
-        graph.setNodeAttribute(node, 'color', COLORS[community % COLORS.length]);
+        graph.setNodeAttribute(node, 'color', attrs.category_color || '#888');
         const baseSize = (attrs as any).size || 2;
         graph.setNodeAttribute(node, 'size', baseSize * sizeMultiplier);
       });
+
+      // Extract unique categories for the legend
+      const catMap = new Map<string, string>();
+      graph.forEachNode((_node, attrs) => {
+        if (attrs.category_name && attrs.category_color) {
+          catMap.set(attrs.category_name, attrs.category_color);
+        }
+      });
+      categories = [...catMap.entries()].map(([name, color]) => ({ name, color }));
 
       forceAtlas2.assign(graph, { iterations: 100, settings: { gravity: 1 } });
 
@@ -72,19 +71,38 @@
   });
 </script>
 
-<div class="graph-container" bind:this={container}>
-  {#if $tagLoading}
-    <div class="overlay">Loading tag graph...</div>
-  {/if}
-  {#if $tagError}
-    <div class="overlay error">{$tagError}</div>
+<div class="graph-wrapper">
+  <div class="graph-container" bind:this={container}>
+    {#if $tagLoading}
+      <div class="overlay">Loading tag graph...</div>
+    {/if}
+    {#if $tagError}
+      <div class="overlay error">{$tagError}</div>
+    {/if}
+  </div>
+
+  {#if categories.length > 0}
+    <div class="legend">
+      {#each categories as cat}
+        <div class="legend-item">
+          <span class="legend-dot" style="background: {cat.color}"></span>
+          <span class="legend-name">{cat.name}</span>
+        </div>
+      {/each}
+    </div>
   {/if}
 </div>
 
 <style>
-  .graph-container {
+  .graph-wrapper {
+    display: flex;
+    flex-direction: column;
     width: 100%;
     height: 100%;
+    min-height: 0;
+  }
+  .graph-container {
+    flex: 1;
     min-height: 0;
     position: relative;
   }
@@ -97,4 +115,25 @@
     z-index: 1;
   }
   .error { color: #e6194b; }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-top: 1px solid #333;
+    background: #111;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    color: #ccc;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
 </style>
