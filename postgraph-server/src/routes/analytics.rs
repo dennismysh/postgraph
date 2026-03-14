@@ -77,7 +77,7 @@ pub async fn get_views(
                       p.timestamp AS post_timestamp
                FROM engagement_snapshots es
                JOIN posts p ON p.id = es.post_id
-               WHERE es.views IS NOT NULL
+               WHERE es.views > 0
            ),
            with_deltas AS (
                SELECT CASE
