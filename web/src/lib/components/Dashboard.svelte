@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
-  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type Post, type SyncStatus } from '$lib/api';
+  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type Post, type SyncStatus, type PostEngagementPoint } from '$lib/api';
 
   let analytics: AnalyticsData | null = $state(null);
   let engagementCanvas: HTMLCanvasElement = $state(null!);
@@ -21,6 +21,10 @@
   let syncInterval: ReturnType<typeof setInterval> | null = null;
   let allViewsData: ViewsPoint[] = $state([]);
   let rangeSums: Record<string, number> = $state({});
+  let expandedPostId: string | null = $state(null);
+  let postEngagementData: PostEngagementPoint[] = $state([]);
+  let postEngagementChart: Chart | null = $state(null);
+  let postEngagementCanvas: HTMLCanvasElement = $state(null!);
 
   const timeRanges = [
     { label: 'Last 24 Hours', value: '24h' },
@@ -144,6 +148,59 @@
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
     if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
     return n.toLocaleString();
+  }
+
+  async function togglePostEngagement(postId: string) {
+    if (expandedPostId === postId) {
+      expandedPostId = null;
+      if (postEngagementChart) { postEngagementChart.destroy(); postEngagementChart = null; }
+      return;
+    }
+    expandedPostId = postId;
+    postEngagementData = await api.getPostEngagement(postId);
+    await tick();
+    renderPostEngagementChart();
+  }
+
+  function renderPostEngagementChart() {
+    if (postEngagementChart) postEngagementChart.destroy();
+    if (!postEngagementCanvas || postEngagementData.length === 0) return;
+
+    const labels = postEngagementData.map(p => {
+      const d = new Date(p.date);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' });
+    });
+
+    postEngagementChart = new Chart(postEngagementCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Views', data: postEngagementData.map(p => p.views), borderColor: '#f58231', borderWidth: 2, pointRadius: 2, cubicInterpolationMode: 'monotone' as const },
+          { label: 'Likes', data: postEngagementData.map(p => p.likes), borderColor: '#e6194b', borderWidth: 1.5, pointRadius: 1, cubicInterpolationMode: 'monotone' as const },
+          { label: 'Replies', data: postEngagementData.map(p => p.replies), borderColor: '#3cb44b', borderWidth: 1.5, pointRadius: 1, cubicInterpolationMode: 'monotone' as const },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' as const },
+        plugins: {
+          legend: { labels: { color: '#ccc', boxWidth: 12, font: { size: 11 } } },
+          tooltip: {
+            backgroundColor: '#1a1a1a',
+            borderColor: '#333',
+            borderWidth: 1,
+            titleColor: '#ccc',
+            padding: 8,
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#666', maxRotation: 45, maxTicksLimit: 10, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+          y: { ticks: { color: '#666', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' }, beginAtZero: true },
+        },
+      },
+    });
   }
 
   async function loadAllViews() {
@@ -506,7 +563,7 @@
             </thead>
             <tbody>
               {#each recentPosts as post}
-                <tr>
+                <tr class="post-row" class:expanded={expandedPostId === post.id} onclick={() => togglePostEngagement(post.id)}>
                   <td class="col-post">
                     <span class="post-text">{post.text?.slice(0, 80) ?? '(no text)'}{(post.text?.length ?? 0) > 80 ? '...' : ''}</span>
                     <span class="post-date">{new Date(post.timestamp).toLocaleDateString()}</span>
@@ -517,6 +574,19 @@
                   <td class="col-num">{post.quotes.toLocaleString()}</td>
                   <td class="col-num">{post.shares.toLocaleString()}</td>
                 </tr>
+                {#if expandedPostId === post.id}
+                  <tr class="engagement-row">
+                    <td colspan="6">
+                      <div class="post-engagement-chart">
+                        {#if postEngagementData.length === 0}
+                          <p class="no-data">No engagement history yet</p>
+                        {:else}
+                          <canvas bind:this={postEngagementCanvas}></canvas>
+                        {/if}
+                      </div>
+                    </td>
+                  </tr>
+                {/if}
               {/each}
             </tbody>
           </table>
@@ -692,5 +762,11 @@
     font-size: 0.75rem;
     margin-top: 0.15rem;
   }
-  tbody tr:hover { background: #1a1a1a; }
+  tbody tr.post-row { cursor: pointer; }
+  tbody tr.post-row:hover { background: #1a1a1a; }
+  tbody tr.post-row.expanded { background: #1a1a2a; border-bottom: none; }
+  tbody tr.post-row.expanded td { border-bottom: none; }
+  .engagement-row td { padding: 0 0.75rem 0.75rem; border-bottom: 1px solid #222; }
+  .post-engagement-chart { height: 200px; position: relative; background: #0d0d0d; border-radius: 6px; padding: 0.5rem; }
+  .no-data { color: #666; font-size: 0.8rem; text-align: center; padding: 2rem 0; margin: 0; }
 </style>
