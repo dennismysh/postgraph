@@ -55,6 +55,23 @@ pub struct AnalysisResponse {
     pub posts: Vec<AnalyzedPost>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryGroup {
+    pub name: String,
+    pub description: String,
+    pub topics: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CategorizeResponse {
+    pub categories: Vec<CategoryGroup>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AssignCategoryResponse {
+    pub category: String,
+}
+
 impl MercuryClient {
     pub fn new(api_key: String, api_url: String) -> Self {
         let client = Client::builder()
@@ -168,5 +185,142 @@ Respond with ONLY valid JSON in this exact format:
         })?;
 
         Ok(analysis)
+    }
+
+    pub async fn categorize_topics(
+        &self,
+        topics: &[(String, String)], // (name, description)
+    ) -> Result<CategorizeResponse, AppError> {
+        let topics_json: Vec<serde_json::Value> = topics
+            .iter()
+            .map(|(name, desc)| serde_json::json!({"name": name, "description": desc}))
+            .collect();
+        let topics_json_pretty = serde_json::to_string_pretty(&topics_json).unwrap_or_default();
+
+        let prompt = format!(
+            r#"Group these topics into broad categories. Each topic should belong to exactly one category. Let the number of categories emerge naturally from the data.
+
+Topics:
+{topics_json_pretty}
+
+Respond with ONLY valid JSON in this exact format:
+{{
+  "categories": [
+    {{
+      "name": "Category Name",
+      "description": "Brief description of what this category covers",
+      "topics": ["Topic A", "Topic B"]
+    }}
+  ]
+}}"#
+        );
+
+        let request = ChatRequest {
+            model: "mercury-2".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            }],
+            temperature: 0.3,
+        };
+
+        let resp = self
+            .client
+            .post(format!("{}/chat/completions", self.api_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::MercuryApi(body));
+        }
+
+        let chat_resp: ChatResponse = resp.json().await?;
+        let content = chat_resp
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+
+        // Parse JSON from response, stripping markdown code fences if present
+        let json_str = content
+            .trim()
+            .strip_prefix("```json")
+            .or_else(|| content.trim().strip_prefix("```"))
+            .unwrap_or(content.trim())
+            .strip_suffix("```")
+            .unwrap_or(content.trim())
+            .trim();
+
+        let categorize: CategorizeResponse = serde_json::from_str(json_str).map_err(|e| {
+            AppError::MercuryApi(format!("Failed to parse response: {e}. Raw: {json_str}"))
+        })?;
+
+        Ok(categorize)
+    }
+
+    pub async fn assign_topic_category(
+        &self,
+        topic_name: &str,
+        categories: &[(String, String)], // (name, description)
+    ) -> Result<AssignCategoryResponse, AppError> {
+        let cats_json = serde_json::to_string(
+            &categories
+                .iter()
+                .map(|(name, desc)| serde_json::json!({"name": name, "description": desc}))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+
+        let prompt = format!(
+            r#"Given the topic "{topic_name}" and these existing categories: {cats_json}, which category does this topic belong to? Return ONLY valid JSON: {{"category": "<category_name>"}}"#
+        );
+
+        let request = ChatRequest {
+            model: "mercury-2".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            }],
+            temperature: 0.1,
+        };
+
+        let resp = self
+            .client
+            .post(format!("{}/chat/completions", self.api_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::MercuryApi(body));
+        }
+
+        let chat_resp: ChatResponse = resp.json().await?;
+        let content = chat_resp
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+
+        // Parse JSON from response, stripping markdown code fences if present
+        let json_str = content
+            .trim()
+            .strip_prefix("```json")
+            .or_else(|| content.trim().strip_prefix("```"))
+            .unwrap_or(content.trim())
+            .strip_suffix("```")
+            .unwrap_or(content.trim())
+            .trim();
+
+        let assign: AssignCategoryResponse = serde_json::from_str(json_str).map_err(|e| {
+            AppError::MercuryApi(format!("Failed to parse response: {e}. Raw: {json_str}"))
+        })?;
+
+        Ok(assign)
     }
 }
