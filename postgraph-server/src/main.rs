@@ -84,6 +84,9 @@ async fn main() {
         sync_message: Arc::new(tokio::sync::RwLock::new(String::new())),
         sync_progress: Arc::new(AtomicU32::new(0)),
         sync_total: Arc::new(AtomicU32::new(0)),
+        categorize_running: Arc::new(AtomicBool::new(false)),
+        categorize_progress: Arc::new(AtomicU32::new(0)),
+        categorize_total: Arc::new(AtomicU32::new(0)),
     };
 
     // Spawn background sync task (first run after 30s delay, then every 15 min)
