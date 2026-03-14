@@ -1,6 +1,12 @@
 use crate::types::*;
 use sqlx::PgPool;
 
+pub const CATEGORY_COLORS: &[&str] = &[
+    "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
+    "#42d4f4", "#f032e6", "#bfef45", "#fabed4", "#469990",
+    "#dcbeff", "#9A6324", "#800000", "#aaffc3", "#808000",
+];
+
 // -- Posts --
 
 pub async fn upsert_post(pool: &PgPool, post: &Post) -> sqlx::Result<()> {
@@ -132,6 +138,73 @@ pub async fn get_all_topics(pool: &PgPool) -> sqlx::Result<Vec<Topic>> {
     sqlx::query_as::<_, Topic>("SELECT * FROM topics ORDER BY name")
         .fetch_all(pool)
         .await
+}
+
+// -- Categories --
+
+pub async fn get_all_categories(pool: &PgPool) -> sqlx::Result<Vec<Category>> {
+    sqlx::query_as::<_, Category>("SELECT * FROM categories ORDER BY name")
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn upsert_category(
+    pool: &PgPool,
+    name: &str,
+    description: &str,
+    color: &str,
+) -> sqlx::Result<Category> {
+    sqlx::query_as::<_, Category>(
+        r#"INSERT INTO categories (name, description, color)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description
+           RETURNING *"#,
+    )
+    .bind(name)
+    .bind(description)
+    .bind(color)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn set_topic_category(
+    pool: &PgPool,
+    topic_name: &str,
+    category_id: uuid::Uuid,
+) -> sqlx::Result<()> {
+    sqlx::query("UPDATE topics SET category_id = $1 WHERE name = $2")
+        .bind(category_id)
+        .bind(topic_name)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_orphaned_categories(pool: &PgPool) -> sqlx::Result<u64> {
+    let result = sqlx::query(
+        "DELETE FROM categories WHERE id NOT IN (SELECT DISTINCT category_id FROM topics WHERE category_id IS NOT NULL)",
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn get_categories_with_topics(
+    pool: &PgPool,
+) -> sqlx::Result<Vec<(Category, Vec<String>)>> {
+    let categories = get_all_categories(pool).await?;
+    let mut result = Vec::new();
+    for cat in categories {
+        let topic_names: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM topics WHERE category_id = $1 ORDER BY name",
+        )
+        .bind(cat.id)
+        .fetch_all(pool)
+        .await?;
+        let names: Vec<String> = topic_names.into_iter().map(|(n,)| n).collect();
+        result.push((cat, names));
+    }
+    Ok(result)
 }
 
 pub async fn upsert_post_topic(
