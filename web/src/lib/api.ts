@@ -14,6 +14,7 @@ export interface GraphNode {
   topics: string[];
   timestamp: string | null;
   engagement: number;
+  category: { name: string; color: string } | null;
 }
 
 export interface GraphEdge {
@@ -124,6 +125,9 @@ export interface TagGraphNode {
   post_count: number;
   total_engagement: number;
   post_ids: string[];
+  category_id: string | null;
+  category_name: string | null;
+  category_color: string | null;
 }
 
 export interface TagGraphEdge {
@@ -136,6 +140,29 @@ export interface TagGraphEdge {
 export interface TagGraphData {
   nodes: TagGraphNode[];
   edges: TagGraphEdge[];
+}
+
+export interface CategoryData {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  topics: string[];
+}
+
+export interface CategoriesResponse {
+  categories: CategoryData[];
+}
+
+export interface CategorizeStartResult {
+  started: boolean;
+  message: string;
+}
+
+export interface CategorizeStatus {
+  running: boolean;
+  progress: number;
+  total: number;
 }
 
 export const api = {
@@ -173,6 +200,17 @@ export const api = {
     return r.json() as Promise<AnalyzeStartResult>;
   }),
   getAnalyzeStatus: () => fetchApi<AnalyzeStatus>('/api/analyze/status'),
+  getCategories: () => fetchApi<CategoriesResponse>('/api/categories'),
+  triggerCategorize: () => fetch('/api/categorize', {
+    method: 'POST',
+  }).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({ error: `Categorize failed (${r.status})` }));
+      throw new Error(body.error ?? `Categorize failed (${r.status})`);
+    }
+    return r.json() as Promise<CategorizeStartResult>;
+  }),
+  getCategorizeStatus: () => fetchApi<CategorizeStatus>('/api/categorize/status'),
   getViews: (since?: string, grouping?: string) => {
     const params = new URLSearchParams();
     if (since) params.set('since', since);

@@ -2,6 +2,7 @@ import { writable, derived } from 'svelte/store';
 
 export interface Filters {
   topics: string[];
+  category: string | null;
   dateFrom: string | null;
   dateTo: string | null;
   minEngagement: number;
@@ -11,6 +12,7 @@ export interface Filters {
 
 export const filters = writable<Filters>({
   topics: [],
+  category: null,
   dateFrom: null,
   dateTo: null,
   minEngagement: 0,
@@ -21,6 +23,7 @@ export const filters = writable<Filters>({
 export function resetFilters() {
   filters.set({
     topics: [],
+    category: null,
     dateFrom: null,
     dateTo: null,
     minEngagement: 0,

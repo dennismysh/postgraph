@@ -65,6 +65,7 @@
 
   let currentFilters: Filters = {
     topics: [],
+    category: null,
     dateFrom: null,
     dateTo: null,
     minEngagement: 0,
