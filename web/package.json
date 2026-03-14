@@ -24,7 +24,6 @@
 		"@sveltejs/adapter-netlify": "^6.0.4",
 		"chart.js": "^4.5.1",
 		"graphology": "^0.26.0",
-		"graphology-communities-louvain": "^2.0.2",
 		"graphology-layout-forceatlas2": "^0.10.1",
 		"sigma": "^3.0.2"
 	}
