@@ -173,6 +173,12 @@ pub async fn run_sync(
         let post_count = response.data.len();
 
         for tp in &response.data {
+            // Skip reposts — these are other users' content we reposted
+            if tp.media_type.as_deref() == Some("REPOST_FACADE") {
+                info!("Skipping repost {}", tp.id);
+                continue;
+            }
+
             let post = threads_post_to_post(tp);
             let is_new = db::upsert_post(pool, &post).await?;
 
