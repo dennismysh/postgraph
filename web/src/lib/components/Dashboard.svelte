@@ -1,13 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
-  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type Post, type SyncStatus, type PostEngagementPoint } from '$lib/api';
+  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type EngagementPoint, type Post, type SyncStatus, type PostEngagementPoint } from '$lib/api';
 
   let analytics: AnalyticsData | null = $state(null);
-  let engagementCanvas: HTMLCanvasElement = $state(null!);
   let topicsCanvas: HTMLCanvasElement = $state(null!);
   let viewsCanvas: HTMLCanvasElement = $state(null!);
-  let engagementChart: Chart | null = $state(null);
   let topicsChart: Chart | null = $state(null);
   let viewsChart: Chart | null = $state(null);
   let viewsData: ViewsPoint[] = $state([]);
@@ -25,6 +23,18 @@
   let postEngagementData: PostEngagementPoint[] = $state([]);
   let postEngagementChart: Chart | null = $state(null);
   let postEngagementCanvas: HTMLCanvasElement = $state(null!);
+
+  // Independent engagement charts
+  let likesCanvas: HTMLCanvasElement = $state(null!);
+  let repliesCanvas: HTMLCanvasElement = $state(null!);
+  let repostsCanvas: HTMLCanvasElement = $state(null!);
+  let likesChart: Chart | null = $state(null);
+  let repliesChart: Chart | null = $state(null);
+  let repostsChart: Chart | null = $state(null);
+  let likesRange = $state('30d');
+  let repliesRange = $state('30d');
+  let repostsRange = $state('30d');
+  let allEngagementData: EngagementPoint[] = $state([]);
 
   const timeRanges = [
     { label: 'Last 24 Hours', value: '24h' },
@@ -126,6 +136,163 @@
         const label = `Week of ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
         return { date: label, views };
       });
+  }
+
+  interface SingleMetricPoint { date: string; value: number; }
+
+  function extractMetric(data: EngagementPoint[], metric: 'likes' | 'replies' | 'reposts'): SingleMetricPoint[] {
+    return data.map(d => ({ date: d.date, value: d[metric] }));
+  }
+
+  function fillHourlyGapsMetric(data: SingleMetricPoint[]): SingleMetricPoint[] {
+    const lookup = new Map<string, number>();
+    for (const point of data) lookup.set(point.date, point.value);
+    const result: SingleMetricPoint[] = [];
+    const now = new Date();
+    now.setMinutes(0, 0, 0);
+    for (let i = 23; i >= 0; i--) {
+      const hour = new Date(now.getTime() - i * 3600_000);
+      const key = hour.toISOString().slice(0, 13).replace('T', ' ') + ':00';
+      const label = key.slice(5);
+      result.push({ date: label, value: lookup.get(key) ?? 0 });
+    }
+    return result;
+  }
+
+  function fillDailyGapsMetric(data: SingleMetricPoint[], range: string): SingleMetricPoint[] {
+    const lookup = new Map<string, number>();
+    for (const point of data) lookup.set(point.date, point.value);
+    const days = parseInt(range);
+    const result: SingleMetricPoint[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today.getTime() - i * 86400_000);
+      const key = d.toISOString().slice(0, 10);
+      result.push({ date: key, value: lookup.get(key) ?? 0 });
+    }
+    return result;
+  }
+
+  function groupMetricData(data: SingleMetricPoint[], grouping: 'hourly' | 'daily' | 'weekly', range: string): SingleMetricPoint[] {
+    if (grouping === 'hourly') return fillHourlyGapsMetric(data);
+    if (grouping === 'daily') return fillDailyGapsMetric(data, range);
+    const grouped = new Map<string, number>();
+    for (const point of data) {
+      const key = getWeekStart(point.date);
+      grouped.set(key, (grouped.get(key) ?? 0) + point.value);
+    }
+    return [...grouped.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, value]) => {
+        const d = new Date(date + 'T00:00:00');
+        const label = `Week of ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        return { date: label, value };
+      });
+  }
+
+  async function loadAllEngagement() {
+    allEngagementData = await api.getEngagement();
+  }
+
+  async function loadEngagementChart(
+    metric: 'likes' | 'replies' | 'reposts',
+    range: string,
+    canvas: HTMLCanvasElement,
+    existingChart: Chart | null,
+    color: string,
+    label: string,
+  ): Promise<Chart | null> {
+    if (existingChart) existingChart.destroy();
+    if (!canvas) return null;
+
+    const grouping = getGrouping(range);
+    let engData: EngagementPoint[];
+
+    if (grouping === 'hourly') {
+      const since = getSinceDate(range);
+      engData = await api.getEngagement(since, 'hourly');
+    } else {
+      const since = getSinceDate(range);
+      if (since) {
+        const sinceDate = since.slice(0, 10);
+        engData = allEngagementData.filter(p => p.date >= sinceDate);
+      } else {
+        engData = allEngagementData;
+      }
+    }
+
+    const raw = extractMetric(engData, metric);
+    const chartData = groupMetricData(raw, grouping, range);
+
+    return new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: chartData.map(v => v.date),
+        datasets: [{
+          label,
+          data: chartData.map(v => v.value),
+          borderColor: color,
+          backgroundColor: (ctx: { chart: Chart }) => {
+            const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
+            gradient.addColorStop(0, color + '59');
+            gradient.addColorStop(1, color + '00');
+            return gradient;
+          },
+          fill: true,
+          cubicInterpolationMode: 'monotone' as const,
+          borderWidth: 2.5,
+          pointRadius: chartData.length > 30 ? 0 : 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: color,
+          pointBorderColor: '#111',
+          pointBorderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' as const },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1a1a1a',
+            borderColor: '#333',
+            borderWidth: 1,
+            titleColor: '#ccc',
+            bodyColor: color,
+            padding: 10,
+            displayColors: false,
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#666', maxRotation: 45, maxTicksLimit: 12, font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,0.04)' },
+          },
+          y: {
+            ticks: { color: '#666', font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,0.06)' },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+  }
+
+  async function renderLikesChart() {
+    await tick();
+    likesChart = await loadEngagementChart('likes', likesRange, likesCanvas, likesChart, '#e6194b', 'Likes');
+  }
+
+  async function renderRepliesChart() {
+    await tick();
+    repliesChart = await loadEngagementChart('replies', repliesRange, repliesCanvas, repliesChart, '#3cb44b', 'Replies');
+  }
+
+  async function renderRepostsChart() {
+    await tick();
+    repostsChart = await loadEngagementChart('reposts', repostsRange, repostsCanvas, repostsChart, '#4363d8', 'Reposts');
   }
 
   function computeRangeSums(allData: ViewsPoint[]) {
@@ -333,10 +500,12 @@
       api.getAnalytics(),
       api.getPosts(),
       loadAllViews(),
+      loadAllEngagement(),
     ]);
     analytics = analyticsResult;
     recentPosts = postsResult.slice(0, 10);
     await loadViews();
+    await Promise.all([renderLikesChart(), renderRepliesChart(), renderRepostsChart()]);
   }
 
   async function handleSync() {
@@ -411,30 +580,13 @@
 
     await tick();
 
-    // Engagement over time
-    engagementChart = new Chart(engagementCanvas, {
-      type: 'line',
-      data: {
-        labels: analytics.engagement_over_time.map(e => e.date),
-        datasets: [
-          { label: 'Likes', data: analytics.engagement_over_time.map(e => e.likes), borderColor: '#e6194b', cubicInterpolationMode: 'monotone' as const },
-          { label: 'Replies', data: analytics.engagement_over_time.map(e => e.replies), borderColor: '#3cb44b', cubicInterpolationMode: 'monotone' as const },
-          { label: 'Reposts', data: analytics.engagement_over_time.map(e => e.reposts), borderColor: '#4363d8', cubicInterpolationMode: 'monotone' as const },
-        ],
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { labels: { color: '#ccc' } } },
-        scales: {
-          x: { ticks: { color: '#888' }, grid: { color: '#222' } },
-          y: { ticks: { color: '#888' }, grid: { color: '#222' } },
-        },
-      },
-    });
-
     // Views over time – load all data once, compute per-range sums client-side
     await loadAllViews();
     await loadViews();
+
+    // Engagement charts – load all data once, render 3 independent charts
+    await loadAllEngagement();
+    await Promise.all([renderLikesChart(), renderRepliesChart(), renderRepostsChart()]);
 
     // Topics breakdown — show top 15 topics, dynamic height
     const topTopics = analytics.topics.slice(0, 15);
@@ -533,11 +685,49 @@
       </div>
     </div>
 
-    <div class="charts">
-      <div class="chart-card">
-        <h3>Engagement Over Time</h3>
-        <canvas bind:this={engagementCanvas}></canvas>
+    <div class="engagement-charts">
+      <div class="chart-card engagement-card">
+        <div class="chart-header">
+          <h3>Likes Over Time {#if getGrouping(likesRange) !== 'daily'}<span class="grouping-label">({getGrouping(likesRange)})</span>{/if}</h3>
+          <select class="range-select" bind:value={likesRange} onchange={() => renderLikesChart()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="chart-container">
+          <canvas bind:this={likesCanvas}></canvas>
+        </div>
       </div>
+      <div class="chart-card engagement-card">
+        <div class="chart-header">
+          <h3>Replies Over Time {#if getGrouping(repliesRange) !== 'daily'}<span class="grouping-label">({getGrouping(repliesRange)})</span>{/if}</h3>
+          <select class="range-select" bind:value={repliesRange} onchange={() => renderRepliesChart()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="chart-container">
+          <canvas bind:this={repliesCanvas}></canvas>
+        </div>
+      </div>
+      <div class="chart-card engagement-card">
+        <div class="chart-header">
+          <h3>Reposts Over Time {#if getGrouping(repostsRange) !== 'daily'}<span class="grouping-label">({getGrouping(repostsRange)})</span>{/if}</h3>
+          <select class="range-select" bind:value={repostsRange} onchange={() => renderRepostsChart()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="chart-container">
+          <canvas bind:this={repostsCanvas}></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="charts">
       <div class="chart-card">
         <h3>Topics Breakdown</h3>
         <div class="topics-container">
@@ -693,6 +883,27 @@
   h3 { margin: 0 0 0.5rem; font-size: 1rem; }
   .grouping-label { font-size: 0.75rem; color: #888; font-weight: normal; }
   .views-card { margin-bottom: 1rem; }
+  .engagement-charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 1200px) {
+    .engagement-charts { grid-template-columns: 1fr; }
+  }
+  .engagement-card .chart-container { height: 250px; }
+  .range-select {
+    background: #222;
+    color: #ccc;
+    border: 1px solid #333;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .range-select:hover { border-color: #555; }
+  .range-select:focus { outline: none; border-color: #4363d8; }
   .chart-container { position: relative; height: 300px; }
   .chart-header {
     display: flex;

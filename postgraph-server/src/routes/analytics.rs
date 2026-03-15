@@ -39,6 +39,84 @@ pub struct ViewsQuery {
     pub grouping: Option<String>,
 }
 
+pub async fn get_engagement(
+    State(state): State<AppState>,
+    Query(query): Query<ViewsQuery>,
+) -> Result<Json<Vec<EngagementPoint>>, axum::http::StatusCode> {
+    let since_clause = if let Some(ref since) = query.since {
+        format!(
+            "WHERE effective_date >= '{}'::timestamptz",
+            since.replace('\'', "")
+        )
+    } else {
+        String::new()
+    };
+
+    let is_hourly = query.grouping.as_deref() == Some("hourly");
+    let (date_expr, date_format) = if is_hourly {
+        (
+            "DATE_TRUNC('hour', effective_date)",
+            "TO_CHAR(DATE_TRUNC('hour', effective_date), 'YYYY-MM-DD HH24:00')",
+        )
+    } else {
+        ("DATE(effective_date)", "DATE(effective_date)::text")
+    };
+
+    let sql = format!(
+        r#"WITH ordered_snapshots AS (
+               SELECT es.captured_at,
+                      es.post_id,
+                      es.likes,
+                      es.replies_count,
+                      es.reposts,
+                      LAG(es.likes) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_likes,
+                      LAG(es.replies_count) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_replies,
+                      LAG(es.reposts) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_reposts,
+                      p.timestamp AS post_timestamp
+               FROM engagement_snapshots es
+               JOIN posts p ON p.id = es.post_id
+           ),
+           with_deltas AS (
+               SELECT CASE
+                          WHEN prev_likes IS NULL THEN post_timestamp
+                          ELSE captured_at
+                      END AS effective_date,
+                      GREATEST(likes - COALESCE(prev_likes, 0), 0) AS like_delta,
+                      GREATEST(replies_count - COALESCE(prev_replies, 0), 0) AS reply_delta,
+                      GREATEST(reposts - COALESCE(prev_reposts, 0), 0) AS repost_delta
+               FROM ordered_snapshots
+           )
+           SELECT {date_format} AS date,
+                  SUM(like_delta)::bigint,
+                  SUM(reply_delta)::bigint,
+                  SUM(repost_delta)::bigint
+           FROM with_deltas
+           {since_clause}
+           GROUP BY {date_expr}
+           ORDER BY date"#,
+        date_format = date_format,
+        since_clause = since_clause,
+        date_expr = date_expr,
+    );
+
+    let rows: Vec<(String, i64, i64, i64)> = sqlx::query_as(&sql)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let points: Vec<EngagementPoint> = rows
+        .into_iter()
+        .map(|(date, likes, replies, reposts)| EngagementPoint {
+            date,
+            likes,
+            replies,
+            reposts,
+        })
+        .collect();
+
+    Ok(Json(points))
+}
+
 pub async fn get_views(
     State(state): State<AppState>,
     Query(query): Query<ViewsQuery>,

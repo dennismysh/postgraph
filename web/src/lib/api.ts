@@ -228,4 +228,11 @@ export const api = {
     const qs = params.toString();
     return fetchApi<ViewsPoint[]>(`/api/analytics/views${qs ? `?${qs}` : ''}`);
   },
+  getEngagement: (since?: string, grouping?: string) => {
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    if (grouping) params.set('grouping', grouping);
+    const qs = params.toString();
+    return fetchApi<EngagementPoint[]>(`/api/analytics/engagement${qs ? `?${qs}` : ''}`);
+  },
 };

@@ -181,6 +181,10 @@ async fn main() {
         .route("/api/analytics", get(routes::analytics::get_analytics))
         .route("/api/analytics/views", get(routes::analytics::get_views))
         .route(
+            "/api/analytics/engagement",
+            get(routes::analytics::get_engagement),
+        )
+        .route(
             "/api/posts/{id}/engagement",
             get(routes::analytics::get_post_engagement),
         )
