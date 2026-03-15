@@ -162,6 +162,61 @@ async fn main() {
         }
     });
 
+    // Spawn nightly sync task at 2am in user's timezone
+    let timezone_str = std::env::var("TIMEZONE").unwrap_or_else(|_| "UTC".to_string());
+    let tz: chrono_tz::Tz = timezone_str.parse().unwrap_or_else(|_| {
+        tracing::warn!("Invalid TIMEZONE '{timezone_str}', defaulting to UTC");
+        chrono_tz::UTC
+    });
+    let nightly_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            let sleep_dur = duration_until_2am(tz);
+            info!(
+                "Nightly sync scheduled in {:.1}h ({tz})",
+                sleep_dur.as_secs_f64() / 3600.0
+            );
+            tokio::time::sleep(sleep_dur).await;
+
+            info!("Nightly sync starting");
+            if let Err(e) =
+                sync::run_sync(&nightly_state.pool, &nightly_state.threads, None).await
+            {
+                tracing::error!("Nightly sync failed: {e}");
+            }
+            if let Err(e) =
+                sync::refresh_all_metrics(&nightly_state.pool, &nightly_state.threads, None).await
+            {
+                tracing::error!("Nightly metrics refresh failed: {e}");
+            }
+            // Run analysis + edge computation for any new posts
+            let mut consecutive_failures = 0;
+            loop {
+                match analysis::run_analysis(&nightly_state.pool, &nightly_state.mercury).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        info!("Nightly analysis batch: {n} posts");
+                        consecutive_failures = 0;
+                    }
+                    Err(e) => {
+                        consecutive_failures += 1;
+                        tracing::error!(
+                            "Nightly analysis failed (attempt {consecutive_failures}): {e}"
+                        );
+                        if consecutive_failures >= 3 {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    }
+                }
+            }
+            if let Err(e) = graph::compute_edges_for_recent(&nightly_state.pool).await {
+                tracing::error!("Nightly edge computation failed: {e}");
+            }
+            info!("Nightly sync complete");
+        }
+    });
+
     let frontend_origin =
         std::env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
     let cors = CorsLayer::new()
@@ -219,4 +274,30 @@ async fn main() {
     let listener = TcpListener::bind(&addr).await.expect("failed to bind");
     info!("Listening on {addr}");
     axum::serve(listener, router).await.expect("server error");
+}
+
+/// Calculate how long to sleep until the next 2am in the given timezone.
+fn duration_until_2am(tz: chrono_tz::Tz) -> Duration {
+    use chrono::Timelike;
+
+    let now_local = chrono::Utc::now().with_timezone(&tz);
+    let target_date = if now_local.hour() >= 2 {
+        now_local.date_naive() + chrono::Duration::days(1)
+    } else {
+        now_local.date_naive()
+    };
+    let target_naive = target_date.and_hms_opt(2, 0, 0).unwrap();
+
+    // Handle DST: earliest() covers normal + ambiguous; None means spring-forward gap
+    let target_utc = match target_naive.and_local_timezone(tz).earliest() {
+        Some(t) => t.with_timezone(&chrono::Utc),
+        None => (target_naive + chrono::Duration::hours(1))
+            .and_local_timezone(tz)
+            .earliest()
+            .expect("3am must exist")
+            .with_timezone(&chrono::Utc),
+    };
+
+    let duration = target_utc - chrono::Utc::now();
+    duration.to_std().unwrap_or(Duration::from_secs(60))
 }
