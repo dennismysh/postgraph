@@ -626,24 +626,14 @@
   });
 
   onMount(async () => {
-    const [analyticsResult, statusResult, postsResult, categoriesResult] = await Promise.all([
+    const [analyticsResult, statusResult, postsResult] = await Promise.all([
       api.getAnalytics(),
       api.getAnalyzeStatus(),
       api.getPosts(),
-      api.getCategories().catch(() => ({ categories: [] })),
     ]);
     analytics = analyticsResult;
     analyzeStatus = statusResult;
     recentPosts = postsResult.slice(0, 10);
-
-    // Build topic-to-color map from categories
-    const topicColorMap: Record<string, string> = {};
-    for (const cat of categoriesResult.categories) {
-      const color = cat.color || '#888';
-      for (const topic of cat.topics) {
-        topicColorMap[topic] = color;
-      }
-    }
 
     if (analyzeStatus?.running) {
       analyzing = true;
@@ -661,16 +651,16 @@
     await loadAllEngagement();
     await Promise.all([renderLikesChart(), renderRepliesChart(), renderRepostsChart()]);
 
-    // Topics breakdown — show top 15 topics, dynamic height
-    const topTopics = analytics.topics.slice(0, 15);
+    // Subjects breakdown — show top 15 subjects, dynamic height
+    const topSubjects = analytics.subjects.slice(0, 15);
     topicsChart = new Chart(topicsCanvas, {
       type: 'bar',
       data: {
-        labels: topTopics.map(t => t.name),
+        labels: topSubjects.map(t => t.name),
         datasets: [{
           label: 'Posts',
-          data: topTopics.map(t => t.post_count),
-          backgroundColor: topTopics.map(t => topicColorMap[t.name] || '#4363d8'),
+          data: topSubjects.map(t => t.post_count),
+          backgroundColor: '#4363d8',
         }],
       },
       options: {
@@ -699,8 +689,8 @@
         <span class="label">Analyzed</span>
       </div>
       <div class="stat">
-        <span class="value">{analytics.total_topics}</span>
-        <span class="label">Topics</span>
+        <span class="value">{analytics.total_subjects}</span>
+        <span class="label">Subjects</span>
       </div>
       <div class="sync-actions">
         {#if syncing}
@@ -811,7 +801,7 @@
 
     <div class="charts">
       <div class="chart-card">
-        <h3>Topics Breakdown</h3>
+        <h3>Subjects Breakdown</h3>
         <div class="topics-container">
           <canvas bind:this={topicsCanvas}></canvas>
         </div>
