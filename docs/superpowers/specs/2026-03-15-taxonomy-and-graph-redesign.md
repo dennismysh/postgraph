@@ -107,19 +107,44 @@ Old tables become unused: `topics`, `post_topics`, `categories`. Drop them after
 
 Old columns on `posts` to keep: `sentiment`, `analyzed_at` (repurposed for the new analysis).
 
+**Color assignment:** Both intents and subjects get colors assigned server-side from the existing `CATEGORY_COLORS` palette when first inserted. The upsert function checks if the row already exists; if inserting a new row, it assigns the next unused color from the palette.
+
+**Description column:** Populated from the seed example descriptions for seed tags. For LLM-created tags, set to an empty string — descriptions are not critical for functionality and can be manually edited later.
+
 ### Edge Computation
 
-Edges connect subjects that share posts with the same intent patterns. Computed as:
+Edges connect subjects that have similar intent distributions. For each pair of subjects (A, B), compute the number of shared intent types:
 
-For each pair of subjects (A, B), count posts where A and B both have posts with the same intent. Subjects frequently co-occurring via the same intent types are more related (e.g., "AI & LLMs" and "Software dev" are connected because both have many "Tip" and "Hot take" posts).
+```sql
+-- Count how many distinct intents appear in BOTH subject A and subject B
+SELECT COUNT(*) AS shared_intents
+FROM (
+    SELECT DISTINCT intent_id FROM posts WHERE subject_id = $1
+    INTERSECT
+    SELECT DISTINCT intent_id FROM posts WHERE subject_id = $2
+) shared;
+```
 
-The `post_edges` table is repurposed to store subject-level edges instead of post-level edges.
+Edge weight = `shared_intents / total_intents` (Jaccard-like similarity). Two subjects are connected if they share at least 2 intent types. This means "AI & LLMs" and "Software dev" are strongly connected if both have Question, Tip, Hot take, and Hype posts, while "Gaming" and "Politics" may not connect at all if they have disjoint intent patterns.
+
+**Storage:** A new `subject_edges` table replaces `post_edges`:
+```sql
+CREATE TABLE subject_edges (
+    source_subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+    target_subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+    weight REAL NOT NULL,
+    shared_intents INTEGER NOT NULL,
+    PRIMARY KEY (source_subject_id, target_subject_id)
+);
+```
+
+The old `post_edges` table is dropped in the migration.
 
 ### Graph Visualization
 
 **Primary view: Subject Network Graph**
 - 15-25 subject nodes (circles), sized by post count
-- Edges between subjects based on shared intent patterns
+- Edges between subjects based on shared intent patterns (from `subject_edges`)
 - Node color from the subject's assigned color
 - Each node shows: subject name, post count, average engagement
 - Click a subject node → sidebar shows its posts sorted by engagement
@@ -129,18 +154,79 @@ The `post_edges` table is repurposed to store subject-level edges instead of pos
 - When filtered, node sizes update to reflect post count within that intent
 - Answers: "what subjects do I joke about most?" or "what subjects do I rant about?"
 
-**Post-level deep dive (secondary tab):**
-- Only shows posts for a selected subject (not all 819)
-- Nodes colored by intent (since subject is already filtered)
-- Labels hidden by default, shown on hover
-- Higher ForceAtlas2 gravity for tighter clusters
+**Post-level deep dive (deferred to follow-up):**
+The post-level graph within a subject is explicitly out of scope for this iteration. The sidebar post list provides sufficient drill-down. A future iteration can add a post-level graph view filtered by subject if needed.
+
+### API Endpoints
+
+**`GET /api/graph`** — Subject network graph (replaces current post graph):
+```json
+{
+  "nodes": [
+    {
+      "id": "uuid",
+      "label": "AI & LLMs",
+      "post_count": 142,
+      "avg_engagement": 45.3,
+      "color": "#4363d8"
+    }
+  ],
+  "edges": [
+    {
+      "source": "uuid-a",
+      "target": "uuid-b",
+      "weight": 0.75,
+      "shared_intents": 6
+    }
+  ],
+  "intents": [
+    { "id": "uuid", "name": "Question", "color": "#e6194b", "post_count": 89 }
+  ]
+}
+```
+
+Query params: `?intent=Question` — filter node sizes to only count posts with that intent.
+
+**`GET /api/subjects/{id}/posts`** — Posts for a subject (sidebar drill-down):
+```json
+{
+  "subject": "AI & LLMs",
+  "posts": [
+    {
+      "id": "post-id",
+      "text": "...",
+      "intent": "Hot take",
+      "engagement": 234,
+      "views": 5000,
+      "timestamp": "2026-03-10T..."
+    }
+  ]
+}
+```
+
+Query params: `?intent=Question` — filter to only posts with that intent.
+
+**`GET /api/analytics`** — Updated to return intent/subject breakdowns instead of topic summaries. Replace `total_topics` and `topics` array with `total_subjects`, `subjects`, `total_intents`, `intents`.
+
+### Downstream Changes
+
+- **`reset_all_analysis` in `db.rs`:** Update to clear `intent_id`/`subject_id` on posts, delete from `subject_edges`, and optionally clear `intents`/`subjects` tables.
+- **`/api/reanalyze` route:** Remove the auto-categorization trigger (no longer needed).
+- **`/api/categorize` and `/api/categories` routes:** Remove entirely.
+- **`AppState`:** Remove `categorize_running`/`categorize_progress`/`categorize_total` fields.
+- **Background sync and nightly sync in `main.rs`:** Update to call new analysis pipeline; remove edge computation step (edges recomputed after full reanalysis, not incrementally per-post).
+- **FilterBar.svelte:** Update to show intent/subject dropdowns instead of topic/category pills.
 
 ### Migration Strategy
 
-1. Add new tables (`intents`, `subjects`) and columns (`intent_id`, `subject_id`) via SQL migration
+1. SQL migration: create `intents`, `subjects`, `subject_edges` tables; add `intent_id`, `subject_id` columns to `posts`
 2. Rewrite Mercury `analyze_posts()` to use the new prompt returning intent + subject
 3. Update `analysis.rs` to upsert intents/subjects and set foreign keys on posts
 4. Rewrite graph API endpoints to serve subject-level graph data
-5. Update frontend Graph.svelte to render subject network with intent faceting
-6. Run full reanalysis of all 819 posts
-7. Drop old tables (`topics`, `post_topics`, `categories`) once verified
+5. Add `/api/subjects/{id}/posts` endpoint
+6. Update analytics endpoint to return intent/subject breakdowns
+7. Update frontend Graph.svelte to render subject network with intent faceting
+8. Update FilterBar.svelte for intent/subject filtering
+9. Remove categorization routes, AppState fields, and old analysis code
+10. Run full reanalysis of all posts
+11. SQL migration: drop old tables (`topics`, `post_topics`, `categories`, `post_edges`) once verified
