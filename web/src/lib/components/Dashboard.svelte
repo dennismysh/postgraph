@@ -19,6 +19,7 @@
   let syncInterval: ReturnType<typeof setInterval> | null = null;
   let allViewsData: ViewsPoint[] = $state([]);
   let rangeSums: Record<string, number> = $state({});
+  let viewsGrouping = $state('weekly');
   let expandedPostId: string | null = $state(null);
   let postEngagementData: PostEngagementPoint[] = $state([]);
   let postEngagementChart: Chart | null = $state(null);
@@ -62,10 +63,25 @@
     return now.toISOString();
   }
 
+  const viewsGroupingOptions = [
+    { label: 'Daily', value: 'daily' },
+    { label: 'Weekly', value: 'weekly' },
+    { label: '14 Days', value: 'biweekly' },
+    { label: 'Monthly', value: 'monthly' },
+    { label: 'Quarterly', value: 'quarterly' },
+    { label: '6 Months', value: '6months' },
+    { label: 'Yearly', value: 'yearly' },
+  ];
+
   function getGrouping(range: string): 'hourly' | 'daily' | 'weekly' {
     if (range === '24h') return 'hourly';
     if (range === '7d' || range === '14d') return 'daily';
     return 'weekly';
+  }
+
+  function getEffectiveViewsGrouping(): string {
+    if (selectedRange === '24h') return 'hourly';
+    return viewsGrouping;
   }
 
   function getWeekStart(dateStr: string): string {
@@ -76,20 +92,17 @@
   }
 
   function fillHourlyGaps(data: ViewsPoint[]): ViewsPoint[] {
-    // Build a lookup from the backend data (format: "YYYY-MM-DD HH:00")
     const lookup = new Map<string, number>();
     for (const point of data) {
       lookup.set(point.date, point.views);
     }
-
-    // Generate all 24 hours from now back
     const result: ViewsPoint[] = [];
     const now = new Date();
     now.setMinutes(0, 0, 0);
     for (let i = 23; i >= 0; i--) {
       const hour = new Date(now.getTime() - i * 3600_000);
       const key = hour.toISOString().slice(0, 13).replace('T', ' ') + ':00';
-      const label = key.slice(5); // "MM-DD HH:00"
+      const label = key.slice(5);
       result.push({ date: label, views: lookup.get(key) ?? 0 });
     }
     return result;
@@ -100,7 +113,6 @@
     for (const point of data) {
       lookup.set(point.date, point.views);
     }
-
     const days = parseInt(range);
     const result: ViewsPoint[] = [];
     const today = new Date();
@@ -113,29 +125,92 @@
     return result;
   }
 
-  function groupViewsData(data: ViewsPoint[], grouping: 'hourly' | 'daily' | 'weekly'): ViewsPoint[] {
-    if (grouping === 'hourly') {
-      return fillHourlyGaps(data);
+  function getViewsGroupKey(dateStr: string, grouping: string): string {
+    switch (grouping) {
+      case 'weekly': return getWeekStart(dateStr);
+      case 'biweekly': {
+        const epoch = new Date('2024-01-01T00:00:00').getTime();
+        const d = new Date(dateStr + 'T00:00:00').getTime();
+        const daysSinceEpoch = Math.floor((d - epoch) / 86400_000);
+        const periodStart = daysSinceEpoch - (daysSinceEpoch % 14);
+        const startDate = new Date(epoch + periodStart * 86400_000);
+        return startDate.toISOString().slice(0, 10);
+      }
+      case 'monthly': return dateStr.slice(0, 7);
+      case 'quarterly': {
+        const year = dateStr.slice(0, 4);
+        const month = parseInt(dateStr.slice(5, 7));
+        return `${year}-Q${Math.ceil(month / 3)}`;
+      }
+      case '6months': {
+        const year = dateStr.slice(0, 4);
+        const month = parseInt(dateStr.slice(5, 7));
+        return `${year}-${month <= 6 ? 'H1' : 'H2'}`;
+      }
+      case 'yearly': return dateStr.slice(0, 4);
+      default: return dateStr;
     }
+  }
+
+  function formatViewsLabel(key: string, grouping: string, showYear: boolean): string {
+    switch (grouping) {
+      case 'daily': {
+        const d = new Date(key + 'T00:00:00');
+        const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return showYear ? `${label} '${d.getFullYear().toString().slice(2)}` : label;
+      }
+      case 'weekly':
+      case 'biweekly': {
+        const d = new Date(key + 'T00:00:00');
+        const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return showYear ? `${label} '${d.getFullYear().toString().slice(2)}` : label;
+      }
+      case 'monthly': {
+        const [year, month] = key.split('-');
+        const d = new Date(parseInt(year), parseInt(month) - 1);
+        const label = d.toLocaleDateString('en-US', { month: 'short' });
+        return showYear ? `${label} '${year.slice(2)}` : label;
+      }
+      case 'quarterly': {
+        const [year, q] = key.split('-');
+        return `${q} '${year.slice(2)}`;
+      }
+      case '6months': {
+        const [year, h] = key.split('-');
+        return `${h} '${year.slice(2)}`;
+      }
+      case 'yearly': return key;
+      default: return key;
+    }
+  }
+
+  function groupViewsData(data: ViewsPoint[], grouping: string): ViewsPoint[] {
+    if (grouping === 'hourly') return fillHourlyGaps(data);
+
+    const showYear = data.length > 1 && new Set(data.map(p => p.date.slice(0, 4))).size > 1;
 
     if (grouping === 'daily') {
-      return fillDailyGaps(data, selectedRange);
+      const filled = ['7d', '14d', '30d'].includes(selectedRange)
+        ? fillDailyGaps(data, selectedRange)
+        : data;
+      return filled.map(p => ({
+        date: formatViewsLabel(p.date, 'daily', showYear),
+        views: p.views,
+      }));
     }
 
     const grouped = new Map<string, number>();
     for (const point of data) {
-      const key = getWeekStart(point.date);
+      const key = getViewsGroupKey(point.date, grouping);
       grouped.set(key, (grouped.get(key) ?? 0) + point.views);
     }
 
     return [...grouped.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, views]) => {
-        // Format as "Week of Mar 1" for readability
-        const d = new Date(date + 'T00:00:00');
-        const label = `Week of ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-        return { date: label, views };
-      });
+      .map(([key, views]) => ({
+        date: formatViewsLabel(key, grouping, showYear),
+        views,
+      }));
   }
 
   interface SingleMetricPoint { date: string; value: number; }
@@ -376,14 +451,12 @@
   }
 
   async function loadViews() {
-    const grouping = getGrouping(selectedRange);
+    const grouping = getEffectiveViewsGrouping();
 
     if (grouping === 'hourly') {
-      // Fetch hourly data from backend for 24h range
       const since = getSinceDate(selectedRange);
       viewsData = await api.getViews(since, 'hourly');
     } else {
-      // Use cached daily data, filter client-side
       const since = getSinceDate(selectedRange);
       if (since) {
         const sinceDate = since.slice(0, 10);
@@ -400,7 +473,7 @@
     if (viewsChart) viewsChart.destroy();
     if (!viewsCanvas) return;
 
-    const grouping = getGrouping(selectedRange);
+    const grouping = getEffectiveViewsGrouping();
     const chartData = groupViewsData(viewsData, grouping);
 
     viewsChart = new Chart(viewsCanvas, {
@@ -669,7 +742,16 @@
 
     <div class="chart-card views-card">
       <div class="chart-header">
-        <h3>Views Over Time {#if getGrouping(selectedRange) !== 'daily'}<span class="grouping-label">({getGrouping(selectedRange)})</span>{/if}</h3>
+        <div class="chart-title-row">
+          <h3>Views Over Time</h3>
+          {#if selectedRange !== '24h'}
+            <select class="range-select" bind:value={viewsGrouping} onchange={() => renderViewsChart()}>
+              {#each viewsGroupingOptions as opt}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          {/if}
+        </div>
         <div class="time-filters">
           {#each timeRanges as range}
             <button
@@ -914,6 +996,7 @@
     margin-bottom: 0.5rem;
   }
   .chart-header h3 { margin: 0; }
+  .chart-title-row { display: flex; align-items: center; gap: 0.5rem; }
   .time-filters {
     display: flex;
     flex-wrap: wrap;
