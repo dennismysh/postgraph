@@ -1,32 +1,30 @@
 import { writable } from 'svelte/store';
 import { MultiGraph } from 'graphology';
 import type Graph from 'graphology';
-import { api, type GraphData } from '$lib/api';
+import { api, type SubjectGraphData } from '$lib/api';
 
-export const graphData = writable<GraphData | null>(null);
+export const graphData = writable<SubjectGraphData | null>(null);
 export const graphInstance = writable<Graph | null>(null);
 export const selectedNode = writable<string | null>(null);
 export const loading = writable(false);
 export const error = writable<string | null>(null);
 
-export async function loadGraph() {
+export async function loadGraph(intent?: string) {
   loading.set(true);
   error.set(null);
   try {
-    const data = await api.getGraph();
+    const data = await api.getGraph(intent);
     graphData.set(data);
 
     const graph = new MultiGraph();
     for (const node of data.nodes) {
+      const size = Math.log(node.post_count + 1) * 4 + 3;
       graph.addNode(node.id, {
         label: node.label,
-        size: node.size,
-        sentiment: node.sentiment,
-        topics: node.topics,
-        timestamp: node.timestamp,
-        engagement: node.engagement,
-        category_name: node.category?.name ?? null,
-        category_color: node.category?.color ?? null,
+        size,
+        post_count: node.post_count,
+        avg_engagement: node.avg_engagement,
+        color: node.color,
         x: Math.random() * 100,
         y: Math.random() * 100,
       });
@@ -35,7 +33,7 @@ export async function loadGraph() {
       if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
         graph.addEdge(edge.source, edge.target, {
           weight: edge.weight,
-          edge_type: edge.edge_type,
+          shared_intents: edge.shared_intents,
         });
       }
     }

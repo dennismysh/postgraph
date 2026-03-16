@@ -1,20 +1,14 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { filters, resetFilters } from '$lib/stores/filters';
   import { graphData, loadGraph } from '$lib/stores/graph';
-  import { api, type SyncStatus } from '$lib/api';
+  import { api, type SyncStatus, type IntentInfo } from '$lib/api';
 
-  let allTopics = $derived.by(() => {
+  let intentList: IntentInfo[] = $derived.by(() => {
     const data = $graphData;
     if (!data) return [];
-    const topicSet = new Set<string>();
-    for (const node of data.nodes) {
-      for (const t of node.topics) topicSet.add(t);
-    }
-    return [...topicSet].sort();
+    return data.intents;
   });
-
-  let categoryList: { name: string; color: string }[] = $state([]);
 
   let syncing = $state(false);
   let syncStatus = $state('');
@@ -23,32 +17,11 @@
   let reanalyzing = $state(false);
   let reanalyzeStatus = $state('');
   let reanalyzeInterval: ReturnType<typeof setInterval> | null = null;
-  let categorizing = $state(false);
-  let categorizeProgress = $state(0);
-  let categorizeTotal = $state(0);
-  let categorizeInterval: ReturnType<typeof setInterval> | null = null;
-
-  onMount(async () => {
-    try {
-      const resp = await api.getCategories();
-      categoryList = resp.categories.map(c => ({ name: c.name, color: c.color || '#888' }));
-    } catch { /* no categories yet */ }
-  });
 
   onDestroy(() => {
     if (syncInterval) clearInterval(syncInterval);
     if (reanalyzeInterval) clearInterval(reanalyzeInterval);
-    if (categorizeInterval) clearInterval(categorizeInterval);
   });
-
-  function toggleTopic(topic: string) {
-    filters.update(f => {
-      const topics = f.topics.includes(topic)
-        ? f.topics.filter(t => t !== topic)
-        : [...f.topics, topic];
-      return { ...f, topics };
-    });
-  }
 
   async function handleSync() {
     syncing = true;
@@ -87,7 +60,7 @@
           syncStatusData = null;
           if (syncInterval) clearInterval(syncInterval);
           syncInterval = null;
-          await loadGraph();
+          await loadGraph($filters.intent ?? undefined);
           setTimeout(() => { syncStatus = ''; }, 5000);
         }
       } catch {
@@ -130,7 +103,7 @@
           reanalyzeStatus = 'Reanalysis complete!';
           if (reanalyzeInterval) clearInterval(reanalyzeInterval);
           reanalyzeInterval = null;
-          await loadGraph();
+          await loadGraph($filters.intent ?? undefined);
           setTimeout(() => { reanalyzeStatus = ''; }, 5000);
         }
       } catch {
@@ -138,46 +111,12 @@
       }
     }, 3000);
   }
-
-  async function handleRecategorize() {
-    try {
-      categorizing = true;
-      await api.triggerCategorize();
-      pollCategorizeStatus();
-    } catch (e: any) {
-      alert(e.message);
-      categorizing = false;
-    }
-  }
-
-  function pollCategorizeStatus() {
-    if (categorizeInterval) clearInterval(categorizeInterval);
-    categorizeInterval = setInterval(async () => {
-      try {
-        const status = await api.getCategorizeStatus();
-        categorizeProgress = status.progress;
-        categorizeTotal = status.total;
-        if (!status.running) {
-          clearInterval(categorizeInterval!);
-          categorizeInterval = null;
-          categorizing = false;
-          // Reload categories after recategorization
-          const resp = await api.getCategories();
-          categoryList = resp.categories.map(c => ({ name: c.name, color: c.color || '#888' }));
-        }
-      } catch {
-        if (categorizeInterval) clearInterval(categorizeInterval);
-        categorizeInterval = null;
-        categorizing = false;
-      }
-    }, 1000);
-  }
 </script>
 
 <div class="filter-bar">
   <input
     type="text"
-    placeholder="Search posts..."
+    placeholder="Search subjects..."
     bind:value={$filters.searchQuery}
     class="search"
   />
@@ -196,25 +135,13 @@
   </div>
 
   <div class="filter-group">
-    <label>Category</label>
-    <select bind:value={$filters.category} class="category-select">
-      <option value={null}>All Categories</option>
-      {#each categoryList as cat}
-        <option value={cat.name}>{cat.name}</option>
+    <label>Intent</label>
+    <select bind:value={$filters.intent} class="intent-select">
+      <option value={null}>All Intents</option>
+      {#each intentList as intent}
+        <option value={intent.name}>{intent.name} ({intent.post_count})</option>
       {/each}
     </select>
-  </div>
-
-  <div class="topics">
-    {#each allTopics as topic}
-      <button
-        class="topic-chip"
-        class:active={$filters.topics.includes(topic)}
-        onclick={() => toggleTopic(topic)}
-      >
-        {topic}
-      </button>
-    {/each}
   </div>
 
   <div class="actions">
@@ -224,9 +151,6 @@
     </button>
     <button class="reanalyze" onclick={handleReanalyze} disabled={reanalyzing}>
       {reanalyzing ? 'Reanalyzing...' : 'Reanalyze'}
-    </button>
-    <button class="reanalyze" onclick={handleRecategorize} disabled={categorizing}>
-      {categorizing ? `Categorizing... (${categorizeProgress}/${categorizeTotal})` : 'Recategorize'}
     </button>
   </div>
   {#if syncing && syncStatusData}
@@ -275,7 +199,7 @@
     padding: 0.2rem;
     border-radius: 4px;
   }
-  .category-select {
+  .intent-select {
     background: #1a1a1a;
     border: 1px solid #444;
     color: #eee;
@@ -283,27 +207,6 @@
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
-  }
-  .topics {
-    display: flex;
-    gap: 0.3rem;
-    flex-wrap: wrap;
-    max-height: 8rem;
-    overflow-y: auto;
-  }
-  .topic-chip {
-    background: #222;
-    border: 1px solid #555;
-    color: #ccc;
-    padding: 0.2rem 0.5rem;
-    border-radius: 12px;
-    cursor: pointer;
-    font-size: 0.75rem;
-  }
-  .topic-chip.active {
-    background: #4363d8;
-    border-color: #4363d8;
-    color: white;
   }
   .actions {
     display: flex;

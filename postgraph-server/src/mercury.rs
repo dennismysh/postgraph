@@ -36,40 +36,17 @@ struct ChatResponseMessage {
     content: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AnalyzedPost {
     pub post_id: String,
-    pub topics: Vec<TopicAssignment>,
+    pub intent: String,
+    pub subject: String,
     pub sentiment: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TopicAssignment {
-    pub name: String,
-    pub description: String,
-    pub weight: f32,
-}
-
 #[derive(Debug, Deserialize)]
-pub struct AnalysisResponse {
+struct AnalysisResponse {
     pub posts: Vec<AnalyzedPost>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CategoryGroup {
-    pub name: String,
-    pub description: String,
-    pub topics: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CategorizeResponse {
-    pub categories: Vec<CategoryGroup>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AssignCategoryResponse {
-    pub category: String,
 }
 
 impl MercuryClient {
@@ -102,13 +79,20 @@ impl MercuryClient {
 
     pub async fn analyze_posts(
         &self,
-        posts: &[(String, String)], // (id, text)
-        existing_topics: &[String],
-    ) -> Result<AnalysisResponse, AppError> {
-        let topics_list = if existing_topics.is_empty() {
-            "No existing topics yet.".to_string()
+        posts: &[(String, String)],
+        existing_intents: &[String],
+        existing_subjects: &[String],
+    ) -> Result<Vec<AnalyzedPost>, AppError> {
+        let intents_list = if existing_intents.is_empty() {
+            "None yet".to_string()
         } else {
-            existing_topics.join(", ")
+            existing_intents.join(", ")
+        };
+
+        let subjects_list = if existing_subjects.is_empty() {
+            "None yet".to_string()
+        } else {
+            existing_subjects.join(", ")
         };
 
         let posts_json: Vec<serde_json::Value> = posts
@@ -118,27 +102,47 @@ impl MercuryClient {
         let posts_json_str = serde_json::to_string_pretty(&posts_json).unwrap_or_default();
 
         let prompt = format!(
-            r#"Analyze these social media posts. For each post, extract:
-1. Topics (map to existing topics when possible, create new ones only when needed)
-2. Sentiment (-1.0 to 1.0)
+            r#"You are analyzing social media posts for a content analytics platform.
 
-Existing topics: [{topics_list}]
+For each post, extract:
+1. **Intent** — what the post is trying to do (one per post)
+2. **Subject** — what the post is about (one per post)
+3. **Sentiment** — emotional tone (-1.0 to 1.0)
 
-Posts:
-{posts_json_str}
+## Intent (pick exactly one)
+The communicative purpose of the post. Seed examples:
+- Question: asking the audience something
+- Hot take: strong opinion meant to provoke thought
+- Humor: joke, wordplay, absurdist observation
+- Story: personal anecdote or experience
+- Tip: sharing something useful or instructional
+- Hype: excitement, celebrating a win or milestone
+- Rant: frustration, complaint, venting
+- Observation: noticing something interesting, neutral tone
+- Promotion: sharing own work, project, or product
 
-Respond with ONLY valid JSON in this exact format:
-{{
-  "posts": [
-    {{
-      "post_id": "the id",
-      "topics": [
-        {{"name": "Topic Name", "description": "Brief description", "weight": 0.8}}
-      ],
-      "sentiment": 0.5
-    }}
-  ]
-}}"#
+You may create new intents if a post genuinely doesn't fit any of these, but apply the reusability test first.
+
+## Subject (pick exactly one)
+The topic domain of the post. Seed examples:
+- AI & LLMs, Software dev, Side projects, Social media, Productivity, Daily life, Gaming, Career, Health, Culture, Tech industry, Politics
+
+You may create new subjects at this same granularity level.
+
+## Rules
+1. REUSABILITY TEST: Before creating a new intent or subject, ask: "Would this apply to at least 10 posts from a typical creator?" If no, use a broader existing tag.
+2. NO COMPOUND TAGS: "Coffee humor" is wrong. That's intent=Humor, subject=Daily life.
+3. PREFER EXISTING: Always reuse an existing intent/subject before creating a new one.
+4. SHORT NAMES: Max 3 words per tag.
+5. NEVER describe a single post's specific content as a tag. "UNO house rules" → subject=Gaming, intent=Question. "Parking preference" → subject=Daily life, intent=Question.
+
+Existing intents: {intents_list}
+Existing subjects: {subjects_list}
+
+Posts: {posts_json_str}
+
+Respond with ONLY valid JSON:
+{{"posts": [{{"post_id": "...", "intent": "...", "subject": "...", "sentiment": 0.5}}]}}"#
         );
 
         let request = ChatRequest {
@@ -184,143 +188,6 @@ Respond with ONLY valid JSON in this exact format:
             AppError::MercuryApi(format!("Failed to parse response: {e}. Raw: {json_str}"))
         })?;
 
-        Ok(analysis)
-    }
-
-    pub async fn categorize_topics(
-        &self,
-        topics: &[(String, String)], // (name, description)
-    ) -> Result<CategorizeResponse, AppError> {
-        let topics_json: Vec<serde_json::Value> = topics
-            .iter()
-            .map(|(name, desc)| serde_json::json!({"name": name, "description": desc}))
-            .collect();
-        let topics_json_pretty = serde_json::to_string_pretty(&topics_json).unwrap_or_default();
-
-        let prompt = format!(
-            r#"Group these topics into broad categories. Each topic should belong to exactly one category. Let the number of categories emerge naturally from the data.
-
-Topics:
-{topics_json_pretty}
-
-Respond with ONLY valid JSON in this exact format:
-{{
-  "categories": [
-    {{
-      "name": "Category Name",
-      "description": "Brief description of what this category covers",
-      "topics": ["Topic A", "Topic B"]
-    }}
-  ]
-}}"#
-        );
-
-        let request = ChatRequest {
-            model: "mercury-2".to_string(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            }],
-            temperature: 0.3,
-        };
-
-        let resp = self
-            .client
-            .post(format!("{}/chat/completions", self.api_url))
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&request)
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(AppError::MercuryApi(body));
-        }
-
-        let chat_resp: ChatResponse = resp.json().await?;
-        let content = chat_resp
-            .choices
-            .first()
-            .map(|c| c.message.content.clone())
-            .unwrap_or_default();
-
-        // Parse JSON from response, stripping markdown code fences if present
-        let json_str = content
-            .trim()
-            .strip_prefix("```json")
-            .or_else(|| content.trim().strip_prefix("```"))
-            .unwrap_or(content.trim())
-            .strip_suffix("```")
-            .unwrap_or(content.trim())
-            .trim();
-
-        let categorize: CategorizeResponse = serde_json::from_str(json_str).map_err(|e| {
-            AppError::MercuryApi(format!("Failed to parse response: {e}. Raw: {json_str}"))
-        })?;
-
-        Ok(categorize)
-    }
-
-    pub async fn assign_topic_category(
-        &self,
-        topic_name: &str,
-        categories: &[(String, String)], // (name, description)
-    ) -> Result<AssignCategoryResponse, AppError> {
-        let cats_json = serde_json::to_string(
-            &categories
-                .iter()
-                .map(|(name, desc)| serde_json::json!({"name": name, "description": desc}))
-                .collect::<Vec<_>>(),
-        )
-        .unwrap_or_default();
-
-        let prompt = format!(
-            r#"Given the topic "{topic_name}" and these existing categories: {cats_json}, which category does this topic belong to? Return ONLY valid JSON: {{"category": "<category_name>"}}"#
-        );
-
-        let request = ChatRequest {
-            model: "mercury-2".to_string(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            }],
-            temperature: 0.1,
-        };
-
-        let resp = self
-            .client
-            .post(format!("{}/chat/completions", self.api_url))
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&request)
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(AppError::MercuryApi(body));
-        }
-
-        let chat_resp: ChatResponse = resp.json().await?;
-        let content = chat_resp
-            .choices
-            .first()
-            .map(|c| c.message.content.clone())
-            .unwrap_or_default();
-
-        // Parse JSON from response, stripping markdown code fences if present
-        let json_str = content
-            .trim()
-            .strip_prefix("```json")
-            .or_else(|| content.trim().strip_prefix("```"))
-            .unwrap_or(content.trim())
-            .strip_suffix("```")
-            .unwrap_or(content.trim())
-            .trim();
-
-        let assign: AssignCategoryResponse = serde_json::from_str(json_str).map_err(|e| {
-            AppError::MercuryApi(format!("Failed to parse response: {e}. Raw: {json_str}"))
-        })?;
-
-        Ok(assign)
+        Ok(analysis.posts)
     }
 }

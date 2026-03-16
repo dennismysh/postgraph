@@ -232,7 +232,11 @@ impl ThreadsClient {
 
     /// Fetch user-level daily views from the Threads Insights API.
     /// Returns daily view counts as (date_string, views) pairs.
-    pub async fn get_user_views(&self, since: i64, until: i64) -> Result<Vec<(String, i64)>, AppError> {
+    pub async fn get_user_views(
+        &self,
+        since: i64,
+        until: i64,
+    ) -> Result<Vec<(String, i64)>, AppError> {
         let url = format!(
             "{}/me/threads_insights?metric=views&since={}&until={}&access_token={}",
             BASE_URL,
@@ -261,10 +265,9 @@ impl ThreadsClient {
                     for v in values {
                         if let Some(end_time) = &v.end_time {
                             // Parse end_time like "2024-07-12T08:00:00+0000"
-                            let date = if let Ok(dt) = chrono::DateTime::parse_from_str(
-                                end_time,
-                                "%Y-%m-%dT%H:%M:%S%z",
-                            ) {
+                            let date = if let Ok(dt) =
+                                chrono::DateTime::parse_from_str(end_time, "%Y-%m-%dT%H:%M:%S%z")
+                            {
                                 dt.format("%Y-%m-%d").to_string()
                             } else {
                                 // Fallback: take first 10 chars as date

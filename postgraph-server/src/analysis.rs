@@ -18,14 +18,11 @@ pub async fn run_analysis(pool: &PgPool, mercury: &MercuryClient) -> Result<u32,
         return Ok(0);
     }
 
-    let categories = db::get_all_categories(pool).await?;
-    let cat_pairs: Vec<(String, String)> = categories
-        .iter()
-        .map(|c| (c.name.clone(), c.description.clone().unwrap_or_default()))
-        .collect();
+    let existing_intents = db::get_all_intents(pool).await?;
+    let intent_names: Vec<String> = existing_intents.iter().map(|i| i.name.clone()).collect();
 
-    let existing_topics = db::get_all_topics(pool).await?;
-    let topic_names: Vec<String> = existing_topics.iter().map(|t| t.name.clone()).collect();
+    let existing_subjects = db::get_all_subjects(pool).await?;
+    let subject_names: Vec<String> = existing_subjects.iter().map(|s| s.name.clone()).collect();
 
     let posts_for_llm: Vec<(String, String)> = unanalyzed
         .iter()
@@ -40,7 +37,10 @@ pub async fn run_analysis(pool: &PgPool, mercury: &MercuryClient) -> Result<u32,
         return Ok(unanalyzed.len() as u32);
     }
 
-    let result = match mercury.analyze_posts(&posts_for_llm, &topic_names).await {
+    let results = match mercury
+        .analyze_posts(&posts_for_llm, &intent_names, &subject_names)
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             warn!("Mercury analysis failed: {e}");
@@ -50,44 +50,17 @@ pub async fn run_analysis(pool: &PgPool, mercury: &MercuryClient) -> Result<u32,
 
     let mut analyzed_count: u32 = 0;
 
-    for analyzed in &result.posts {
-        // Upsert topics and create post_topics links
-        for topic_assignment in &analyzed.topics {
-            let topic =
-                db::upsert_topic(pool, &topic_assignment.name, &topic_assignment.description)
-                    .await?;
-            db::upsert_post_topic(pool, &analyzed.post_id, topic.id, topic_assignment.weight)
-                .await?;
+    for result in &results {
+        let intent_count = db::get_all_intents(pool).await?.len();
+        let intent =
+            db::upsert_intent(pool, &result.intent, "", db::next_color(intent_count)).await?;
 
-            // Incremental category assignment: if topic has no category and categories exist
-            if topic.category_id.is_none() && !cat_pairs.is_empty() {
-                match mercury
-                    .assign_topic_category(&topic_assignment.name, &cat_pairs)
-                    .await
-                {
-                    Ok(assign_resp) => {
-                        if let Some(cat) =
-                            categories.iter().find(|c| c.name == assign_resp.category)
-                            && let Err(e) =
-                                db::set_topic_category(pool, &topic_assignment.name, cat.id).await
-                        {
-                            warn!(
-                                "Failed to set category for topic '{}': {e}",
-                                topic_assignment.name
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Incremental category assignment failed for '{}': {e}",
-                            topic_assignment.name
-                        );
-                    }
-                }
-            }
-        }
+        let subject_count = db::get_all_subjects(pool).await?.len();
+        let subject =
+            db::upsert_subject(pool, &result.subject, "", db::next_color(subject_count)).await?;
 
-        db::mark_post_analyzed(pool, &analyzed.post_id, analyzed.sentiment).await?;
+        db::set_post_intent_subject(pool, &result.post_id, intent.id, subject.id).await?;
+        db::mark_post_analyzed(pool, &result.post_id, result.sentiment).await?;
         analyzed_count += 1;
     }
 

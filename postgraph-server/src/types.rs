@@ -16,6 +16,8 @@ pub struct Post {
     pub reposts: i32,
     pub quotes: i32,
     pub shares: i32,
+    pub intent_id: Option<Uuid>,
+    pub subject_id: Option<Uuid>,
     pub sentiment: Option<f32>,
     pub synced_at: DateTime<Utc>,
     pub analyzed_at: Option<DateTime<Utc>>,
@@ -69,4 +71,28 @@ pub struct SyncState {
     pub id: i32,
     pub last_sync_cursor: Option<String>,
     pub last_sync_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Intent {
+    pub id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub color: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Subject {
+    pub id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub color: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct SubjectEdge {
+    pub source_subject_id: Uuid,
+    pub target_subject_id: Uuid,
+    pub weight: f32,
+    pub shared_intents: i32,
 }
