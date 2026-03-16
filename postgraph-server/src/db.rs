@@ -6,6 +6,11 @@ pub const CATEGORY_COLORS: &[&str] = &[
     "#fabed4", "#469990", "#dcbeff", "#9A6324", "#800000", "#aaffc3", "#808000",
 ];
 
+/// Assign the next unused color from the palette. Falls back to cycling if all used.
+pub fn next_color(used_count: usize) -> &'static str {
+    CATEGORY_COLORS[used_count % CATEGORY_COLORS.len()]
+}
+
 // -- Posts --
 
 /// Upsert a post. Returns `true` if this was a new insert, `false` if it updated an existing row.
@@ -349,4 +354,133 @@ pub async fn update_sync_state(pool: &PgPool, cursor: Option<&str>) -> sqlx::Res
         .execute(pool)
         .await?;
     Ok(())
+}
+
+// -- Intents --
+
+pub async fn upsert_intent(
+    pool: &PgPool,
+    name: &str,
+    description: &str,
+    color: &str,
+) -> sqlx::Result<Intent> {
+    sqlx::query_as::<_, Intent>(
+        r#"INSERT INTO intents (name, description, color)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description
+           RETURNING *"#,
+    )
+    .bind(name)
+    .bind(description)
+    .bind(color)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_all_intents(pool: &PgPool) -> sqlx::Result<Vec<Intent>> {
+    sqlx::query_as::<_, Intent>("SELECT * FROM intents ORDER BY name")
+        .fetch_all(pool)
+        .await
+}
+
+// -- Subjects --
+
+pub async fn upsert_subject(
+    pool: &PgPool,
+    name: &str,
+    description: &str,
+    color: &str,
+) -> sqlx::Result<Subject> {
+    sqlx::query_as::<_, Subject>(
+        r#"INSERT INTO subjects (name, description, color)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description
+           RETURNING *"#,
+    )
+    .bind(name)
+    .bind(description)
+    .bind(color)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_all_subjects(pool: &PgPool) -> sqlx::Result<Vec<Subject>> {
+    sqlx::query_as::<_, Subject>("SELECT * FROM subjects ORDER BY name")
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn set_post_intent_subject(
+    pool: &PgPool,
+    post_id: &str,
+    intent_id: uuid::Uuid,
+    subject_id: uuid::Uuid,
+) -> sqlx::Result<()> {
+    sqlx::query("UPDATE posts SET intent_id = $1, subject_id = $2 WHERE id = $3")
+        .bind(intent_id)
+        .bind(subject_id)
+        .bind(post_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// -- Subject Edges --
+
+pub async fn delete_all_subject_edges(pool: &PgPool) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM subject_edges")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn upsert_subject_edge(
+    pool: &PgPool,
+    source: uuid::Uuid,
+    target: uuid::Uuid,
+    weight: f32,
+    shared_intents: i32,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO subject_edges (source_subject_id, target_subject_id, weight, shared_intents)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (source_subject_id, target_subject_id)
+           DO UPDATE SET weight = EXCLUDED.weight, shared_intents = EXCLUDED.shared_intents"#,
+    )
+    .bind(source)
+    .bind(target)
+    .bind(weight)
+    .bind(shared_intents)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_all_subject_edges(pool: &PgPool) -> sqlx::Result<Vec<SubjectEdge>> {
+    sqlx::query_as::<_, SubjectEdge>("SELECT * FROM subject_edges")
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn get_posts_by_subject(
+    pool: &PgPool,
+    subject_id: uuid::Uuid,
+    intent_filter: Option<uuid::Uuid>,
+) -> sqlx::Result<Vec<Post>> {
+    if let Some(intent_id) = intent_filter {
+        sqlx::query_as::<_, Post>(
+            "SELECT * FROM posts WHERE subject_id = $1 AND intent_id = $2 ORDER BY timestamp DESC",
+        )
+        .bind(subject_id)
+        .bind(intent_id)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as::<_, Post>(
+            "SELECT * FROM posts WHERE subject_id = $1 ORDER BY timestamp DESC",
+        )
+        .bind(subject_id)
+        .fetch_all(pool)
+        .await
+    }
 }
