@@ -108,13 +108,22 @@ pub async fn mark_post_analyzed(pool: &PgPool, post_id: &str, sentiment: f32) ->
 }
 
 pub async fn reset_all_analysis(pool: &PgPool) -> sqlx::Result<u64> {
-    // Delete edges, post_topics, then reset analyzed_at
+    // Delete edges (both old post_edges and new subject_edges)
     sqlx::query("DELETE FROM post_edges").execute(pool).await?;
-    sqlx::query("DELETE FROM post_topics").execute(pool).await?;
-    sqlx::query("DELETE FROM topics").execute(pool).await?;
-    let result = sqlx::query("UPDATE posts SET analyzed_at = NULL, sentiment = NULL")
+    sqlx::query("DELETE FROM subject_edges")
         .execute(pool)
         .await?;
+    sqlx::query("DELETE FROM post_topics").execute(pool).await?;
+    sqlx::query("DELETE FROM topics").execute(pool).await?;
+    // Reset all analysis fields including intent/subject assignments
+    let result = sqlx::query(
+        "UPDATE posts SET analyzed_at = NULL, sentiment = NULL, intent_id = NULL, subject_id = NULL",
+    )
+    .execute(pool)
+    .await?;
+    // Clean up taxonomy tables
+    sqlx::query("DELETE FROM intents").execute(pool).await?;
+    sqlx::query("DELETE FROM subjects").execute(pool).await?;
     Ok(result.rows_affected())
 }
 

@@ -7,13 +7,14 @@ use serde::{Deserialize, Serialize};
 pub struct AnalyticsData {
     pub total_posts: usize,
     pub analyzed_posts: usize,
-    pub total_topics: usize,
-    pub topics: Vec<TopicSummary>,
+    pub total_subjects: usize,
+    pub total_intents: usize,
+    pub subjects: Vec<SubjectSummary>,
     pub engagement_over_time: Vec<EngagementPoint>,
 }
 
 #[derive(Serialize)]
-pub struct TopicSummary {
+pub struct SubjectSummary {
     pub name: String,
     pub post_count: i64,
     pub avg_engagement: f64,
@@ -226,24 +227,27 @@ pub async fn get_analytics(
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let topics = db::get_all_topics(&state.pool)
+    let subjects = db::get_all_subjects(&state.pool)
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let topic_summaries: Vec<TopicSummary> = sqlx::query_as::<_, (String, i64, f64)>(
-        r#"SELECT t.name, COUNT(pt.post_id) as post_count,
-           AVG(p.likes + p.replies_count + p.reposts + p.quotes)::float8 as avg_engagement
-           FROM topics t
-           JOIN post_topics pt ON t.id = pt.topic_id
-           JOIN posts p ON pt.post_id = p.id
-           GROUP BY t.name
+    let intents = db::get_all_intents(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let subject_summaries: Vec<SubjectSummary> = sqlx::query_as::<_, (String, i64, f64)>(
+        r#"SELECT s.name, COUNT(p.id)::bigint AS post_count,
+           COALESCE(AVG(p.likes + p.replies_count + p.reposts + p.quotes), 0)::float8 AS avg_engagement
+           FROM subjects s
+           LEFT JOIN posts p ON p.subject_id = s.id AND p.analyzed_at IS NOT NULL
+           GROUP BY s.name
            ORDER BY post_count DESC"#,
     )
     .fetch_all(&state.pool)
     .await
     .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
     .into_iter()
-    .map(|(name, count, avg)| TopicSummary {
+    .map(|(name, count, avg)| SubjectSummary {
         name,
         post_count: count,
         avg_engagement: avg,
@@ -299,8 +303,9 @@ pub async fn get_analytics(
     Ok(Json(AnalyticsData {
         total_posts: posts.len(),
         analyzed_posts: analyzed_count,
-        total_topics: topics.len(),
-        topics: topic_summaries,
+        total_subjects: subjects.len(),
+        total_intents: intents.len(),
+        subjects: subject_summaries,
         engagement_over_time,
     }))
 }

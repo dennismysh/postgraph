@@ -84,9 +84,6 @@ async fn main() {
         sync_message: Arc::new(tokio::sync::RwLock::new(String::new())),
         sync_progress: Arc::new(AtomicU32::new(0)),
         sync_total: Arc::new(AtomicU32::new(0)),
-        categorize_running: Arc::new(AtomicBool::new(false)),
-        categorize_progress: Arc::new(AtomicU32::new(0)),
-        categorize_total: Arc::new(AtomicU32::new(0)),
     };
 
     // Spawn background sync task (first run after 30s delay, then every 15 min)
@@ -156,7 +153,7 @@ async fn main() {
                     }
                 }
             }
-            if let Err(e) = graph::compute_edges_for_recent(&bg_state.pool).await {
+            if let Err(e) = graph::compute_subject_edges(&bg_state.pool).await {
                 tracing::error!("Background edge computation failed: {e}");
             }
         }
@@ -179,8 +176,7 @@ async fn main() {
             tokio::time::sleep(sleep_dur).await;
 
             info!("Nightly sync starting");
-            if let Err(e) =
-                sync::run_sync(&nightly_state.pool, &nightly_state.threads, None).await
+            if let Err(e) = sync::run_sync(&nightly_state.pool, &nightly_state.threads, None).await
             {
                 tracing::error!("Nightly sync failed: {e}");
             }
@@ -210,7 +206,7 @@ async fn main() {
                     }
                 }
             }
-            if let Err(e) = graph::compute_edges_for_recent(&nightly_state.pool).await {
+            if let Err(e) = graph::compute_subject_edges(&nightly_state.pool).await {
                 tracing::error!("Nightly edge computation failed: {e}");
             }
             info!("Nightly sync complete");
@@ -232,7 +228,6 @@ async fn main() {
         .route("/api/posts", get(routes::posts::list_posts))
         .route("/api/posts/{id}", get(routes::posts::get_post))
         .route("/api/graph", get(routes::graph::get_graph))
-        .route("/api/graph/tags", get(routes::graph::get_tag_graph))
         .route("/api/analytics", get(routes::analytics::get_analytics))
         .route("/api/analytics/views", get(routes::analytics::get_views))
         .route(
@@ -249,14 +244,9 @@ async fn main() {
         .route("/api/analyze", post(routes::analyze::start_analyze))
         .route("/api/analyze/status", get(routes::analyze::analyze_status))
         .route(
-            "/api/categorize",
-            post(routes::categorize::start_categorize),
+            "/api/subjects/{id}/posts",
+            get(routes::subjects::get_subject_posts),
         )
-        .route(
-            "/api/categorize/status",
-            get(routes::categorize::categorize_status),
-        )
-        .route("/api/categories", get(routes::categorize::list_categories))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,

@@ -84,31 +84,10 @@ pub async fn start_analyze(
             }
         }
 
-        // Compute edges for all newly analyzed posts
-        info!("Analysis complete ({total_analyzed} posts), computing edges...");
-        loop {
-            match graph::compute_edges_for_recent(&bg_state.pool).await {
-                Ok(0) => break,
-                Ok(n) => info!("Computed batch of {n} edges"),
-                Err(e) => {
-                    tracing::error!("Edge computation failed: {e}");
-                    break;
-                }
-            }
-        }
-
-        // Auto-categorize if no categories exist yet
-        let cat_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM categories")
-            .fetch_one(&bg_state.pool)
-            .await
-            .unwrap_or(0);
-        if cat_count == 0 && total_analyzed > 0 {
-            info!("No categories exist, running auto-categorization...");
-            bg_state.categorize_running.store(true, Ordering::SeqCst);
-            if let Err(e) = crate::routes::categorize::run_full_categorization(&bg_state).await {
-                tracing::error!("Auto-categorization failed: {e}");
-            }
-            bg_state.categorize_running.store(false, Ordering::SeqCst);
+        // Compute subject edges for all newly analyzed posts
+        info!("Analysis complete ({total_analyzed} posts), computing subject edges...");
+        if let Err(e) = graph::compute_subject_edges(&bg_state.pool).await {
+            tracing::error!("Subject edge computation failed: {e}");
         }
 
         bg_state.analysis_running.store(false, Ordering::SeqCst);
