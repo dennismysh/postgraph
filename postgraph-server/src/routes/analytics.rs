@@ -121,12 +121,42 @@ pub async fn get_views(
     State(state): State<AppState>,
     Query(query): Query<ViewsQuery>,
 ) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
-    // Compute view *deltas* between consecutive engagement snapshots so that
-    // views are attributed to when they were received, not when the post was
-    // published.  For the first snapshot of each post (no previous snapshot),
-    // we attribute those views to the post's publication date since we don't
-    // know when they actually accumulated.  For subsequent snapshots, the delta
-    // is attributed to the snapshot's captured_at time.
+    // For hourly grouping, use snapshot deltas (Threads API only provides daily)
+    if query.grouping.as_deref() == Some("hourly") {
+        return get_views_from_snapshots(&state.pool, &query).await;
+    }
+
+    // For daily data, use Threads user-level insights API (authoritative source)
+    let until = chrono::Utc::now().timestamp();
+    let since = if let Some(ref since_str) = query.since {
+        chrono::DateTime::parse_from_rfc3339(since_str)
+            .map(|dt| dt.timestamp())
+            .unwrap_or(1712991600)
+    } else {
+        // Threads API earliest allowed: April 13, 2024
+        1712991600
+    };
+
+    match state.threads.get_user_views(since, until).await {
+        Ok(rows) => {
+            let points: Vec<ViewsPoint> = rows
+                .into_iter()
+                .map(|(date, views)| ViewsPoint { date, views })
+                .collect();
+            Ok(Json(points))
+        }
+        Err(e) => {
+            tracing::warn!("User insights API failed, falling back to snapshots: {e}");
+            get_views_from_snapshots(&state.pool, &query).await
+        }
+    }
+}
+
+/// Fallback: compute views from engagement snapshot deltas.
+async fn get_views_from_snapshots(
+    pool: &sqlx::PgPool,
+    query: &ViewsQuery,
+) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
     let since_clause = if let Some(ref since) = query.since {
         format!(
             "WHERE effective_date >= '{}'::timestamptz",
@@ -177,7 +207,7 @@ pub async fn get_views(
     );
 
     let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
-        .fetch_all(&state.pool)
+        .fetch_all(pool)
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
