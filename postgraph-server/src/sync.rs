@@ -145,6 +145,8 @@ fn threads_post_to_post(tp: &ThreadsPost) -> Post {
         reposts: 0,
         quotes: 0,
         shares: 0,
+        intent_id: None,
+        subject_id: None,
         sentiment: None,
         synced_at: Utc::now(),
         analyzed_at: None,
