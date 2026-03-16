@@ -70,7 +70,7 @@ pub struct GraphPost {
 
 pub async fn get_posts_for_graph(pool: &PgPool) -> sqlx::Result<Vec<GraphPost>> {
     sqlx::query_as::<_, GraphPost>(
-        "SELECT id, LEFT(text, 80) AS text_preview, timestamp, likes, replies_count, reposts, quotes, sentiment, analyzed_at FROM posts ORDER BY timestamp DESC",
+        "SELECT id, LEFT(text, 80) AS text_preview, timestamp, likes, replies_count, reposts, quotes, sentiment, analyzed_at FROM posts WHERE COALESCE(media_type, '') != 'REPOST_FACADE' AND (text IS NOT NULL OR views + likes + replies_count + reposts + quotes > 0) ORDER BY timestamp DESC",
     )
     .fetch_all(pool)
     .await
