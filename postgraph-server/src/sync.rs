@@ -163,9 +163,11 @@ pub async fn run_sync(
     let mut cursor = sync_state.last_sync_cursor;
     let mut total_synced: u32 = 0;
 
+    // Use existing DB post count as the known total; new posts increment it.
+    let existing_count = db::get_all_post_ids(pool).await?.len() as u32;
     if let Some((prog, tot)) = &progress {
         prog.store(0, Ordering::SeqCst);
-        tot.store(0, Ordering::SeqCst);
+        tot.store(existing_count, Ordering::SeqCst);
     }
 
     loop {
@@ -242,7 +244,9 @@ pub async fn run_sync(
             total_synced += 1;
             if let Some((prog, tot)) = &progress {
                 prog.store(total_synced, Ordering::SeqCst);
-                tot.store(total_synced, Ordering::SeqCst);
+                if is_new {
+                    tot.fetch_add(1, Ordering::SeqCst);
+                }
             }
         }
 
