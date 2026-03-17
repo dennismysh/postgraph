@@ -9,18 +9,37 @@
 
   let loading = $state(true);
   let error: string | null = $state(null);
-
-  let daily: DailyEntry[] = $state([]);
-  let hourly: HourlyEntry[] = $state([]);
-  let likeSpectrum: SpectrumEntry[] = $state([]);
-  let cadenceSpectrum: SpectrumEntry[] = $state([]);
   let hasEnoughData = $state(false);
 
-  // Stats
+  // All fetched posts (unfiltered)
+  let allPosts: Post[] = [];
+
+  // Stats (computed from all posts)
   let dominantEngagement = $state('—');
   let dominantCadence = $state('—');
   let totalLikes = $state(0);
   let avgPostsPerDay = $state('0');
+
+  // Per-card time range state
+  const timeRanges = [
+    { label: 'Last 7 Days', value: '7d' },
+    { label: 'Last 14 Days', value: '14d' },
+    { label: 'Last 30 Days', value: '30d' },
+    { label: 'Last 60 Days', value: '60d' },
+    { label: 'Last 90 Days', value: '90d' },
+    { label: 'Last 180 Days', value: '180d' },
+    { label: 'Last 365 Days', value: '365d' },
+    { label: 'All Time', value: 'all' },
+  ];
+
+  let likesRange = $state('30d');
+  let spectrumRange = $state('30d');
+  let postsRange = $state('30d');
+  let cadenceRange = $state('30d');
+  let hourlyRange = $state('30d');
+
+  // Hourly data for bucket stats (tracks hourlyRange)
+  let hourly: HourlyEntry[] = $state([]);
 
   // Canvas refs
   let likesCanvas: HTMLCanvasElement = $state(null!);
@@ -95,10 +114,23 @@
     return d.slice(5); // MM-DD
   }
 
-  async function buildCharts() {
-    await tick();
+  function filterPostsByRange(posts: Post[], range: string): Post[] {
+    if (range === 'all') return posts;
+    const days = parseInt(range);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return posts.filter(p => new Date(p.timestamp) >= cutoff);
+  }
 
-    // Chart 1: Daily Likes (area + smoothed line)
+  async function rebuildLikesChart() {
+    await tick();
+    likesChart?.destroy();
+    const filtered = filterPostsByRange(allPosts, likesRange);
+    const daily = postsToDaily(filtered);
+    const likeSignal = daily.map(d => d.likes);
+    const smoothed = computeSmoothed(likeSignal);
+    daily.forEach((d, i) => { d.smoothed = smoothed[i]; });
+
     likesChart = new Chart(likesCanvas, {
       type: 'line',
       data: {
@@ -143,17 +175,29 @@
         scales: { x: darkScaleX, y: darkScaleY },
       },
     });
+  }
 
-    // Chart 2: Engagement Spectrum
-    const likePeaks = topPeaks(likeSpectrum, 2);
-    const filteredLikeSpectrum = likeSpectrum.filter(s => parseFloat(s.period) <= 60);
+  async function rebuildSpectrumChart() {
+    await tick();
+    spectrumChart?.destroy();
+    const filtered = filterPostsByRange(allPosts, spectrumRange);
+    const daily = postsToDaily(filtered);
+    if (daily.length < 8) {
+      spectrumChart = null;
+      return;
+    }
+    const likeSignal = daily.map(d => d.likes);
+    const spectrum = computeSpectrum(likeSignal);
+    const peaks = topPeaks(spectrum, 2);
+    const filteredSpectrum = spectrum.filter(s => parseFloat(s.period) <= 60);
+
     spectrumChart = new Chart(spectrumCanvas, {
       type: 'bar',
       data: {
-        labels: filteredLikeSpectrum.map(s => s.period),
+        labels: filteredSpectrum.map(s => s.period),
         datasets: [{
           label: 'Magnitude',
-          data: filteredLikeSpectrum.map(s => s.magnitude),
+          data: filteredSpectrum.map(s => s.magnitude),
           backgroundColor: 'rgba(139,92,246,0.6)',
           borderColor: '#8b5cf6',
           borderWidth: 1,
@@ -175,10 +219,16 @@
           y: darkScaleY,
         },
       },
-      plugins: [peakAnnotationPlugin(likePeaks, '#f59e0b')],
+      plugins: [peakAnnotationPlugin(peaks, '#f59e0b')],
     });
+  }
 
-    // Chart 3: Posts per Day
+  async function rebuildPostsChart() {
+    await tick();
+    postsChart?.destroy();
+    const filtered = filterPostsByRange(allPosts, postsRange);
+    const daily = postsToDaily(filtered);
+
     postsChart = new Chart(postsCanvas, {
       type: 'bar',
       data: {
@@ -208,17 +258,29 @@
         },
       },
     });
+  }
 
-    // Chart 4: Cadence Spectrum
-    const cadencePeaks = topPeaks(cadenceSpectrum, 2);
-    const filteredCadenceSpectrum = cadenceSpectrum.filter(s => parseFloat(s.period) <= 60);
+  async function rebuildCadenceChart() {
+    await tick();
+    cadenceChart?.destroy();
+    const filtered = filterPostsByRange(allPosts, cadenceRange);
+    const daily = postsToDaily(filtered);
+    if (daily.length < 8) {
+      cadenceChart = null;
+      return;
+    }
+    const postSignal = daily.map(d => d.posts);
+    const spectrum = computeSpectrum(postSignal);
+    const peaks = topPeaks(spectrum, 2);
+    const filteredSpectrum = spectrum.filter(s => parseFloat(s.period) <= 60);
+
     cadenceChart = new Chart(cadenceCanvas, {
       type: 'bar',
       data: {
-        labels: filteredCadenceSpectrum.map(s => s.period),
+        labels: filteredSpectrum.map(s => s.period),
         datasets: [{
           label: 'Magnitude',
-          data: filteredCadenceSpectrum.map(s => s.magnitude),
+          data: filteredSpectrum.map(s => s.magnitude),
           backgroundColor: 'rgba(67,99,216,0.6)',
           borderColor: '#4363d8',
           borderWidth: 1,
@@ -240,10 +302,16 @@
           y: darkScaleY,
         },
       },
-      plugins: [peakAnnotationPlugin(cadencePeaks, '#f59e0b')],
+      plugins: [peakAnnotationPlugin(peaks, '#f59e0b')],
     });
+  }
 
-    // Chart 5: Hourly Distribution
+  async function rebuildHourlyChart() {
+    await tick();
+    hourlyChart?.destroy();
+    const filtered = filterPostsByRange(allPosts, hourlyRange);
+    hourly = postsToHourly(filtered);
+
     hourlyChart = new Chart(hourlyCanvas, {
       type: 'bar',
       data: {
@@ -277,34 +345,36 @@
 
   onMount(async () => {
     try {
-      const posts = await api.getPosts();
-      daily = postsToDaily(posts);
-      hourly = postsToHourly(posts);
+      allPosts = await api.getPosts();
+      const allDaily = postsToDaily(allPosts);
 
-      totalLikes = daily.reduce((s, d) => s + d.likes, 0);
-      const totalPosts = daily.reduce((s, d) => s + d.posts, 0);
-      avgPostsPerDay = daily.length > 0 ? (totalPosts / daily.length).toFixed(1) : '0';
+      totalLikes = allDaily.reduce((s, d) => s + d.likes, 0);
+      const totalPostsCount = allDaily.reduce((s, d) => s + d.posts, 0);
+      avgPostsPerDay = allDaily.length > 0 ? (totalPostsCount / allDaily.length).toFixed(1) : '0';
 
-      hasEnoughData = daily.length >= 8;
+      hasEnoughData = allDaily.length >= 8;
 
       if (hasEnoughData) {
-        const likeSignal = daily.map(d => d.likes);
-        const postSignal = daily.map(d => d.posts);
+        const likeSignal = allDaily.map(d => d.likes);
+        const postSignal = allDaily.map(d => d.posts);
 
-        likeSpectrum = computeSpectrum(likeSignal);
-        cadenceSpectrum = computeSpectrum(postSignal);
+        const allLikeSpectrum = computeSpectrum(likeSignal);
+        const allCadenceSpectrum = computeSpectrum(postSignal);
 
-        const smoothed = computeSmoothed(likeSignal);
-        daily = daily.map((d, i) => ({ ...d, smoothed: smoothed[i] }));
-
-        const engPeaks = topPeaks(likeSpectrum, 1);
+        const engPeaks = topPeaks(allLikeSpectrum, 1);
         dominantEngagement = engPeaks.length > 0 ? `${engPeaks[0].period}d` : '—';
 
-        const cadPeaks = topPeaks(cadenceSpectrum, 1);
+        const cadPeaks = topPeaks(allCadenceSpectrum, 1);
         dominantCadence = cadPeaks.length > 0 ? `${cadPeaks[0].period}d` : '—';
 
         loading = false;
-        await buildCharts();
+        await Promise.all([
+          rebuildLikesChart(),
+          rebuildSpectrumChart(),
+          rebuildPostsChart(),
+          rebuildCadenceChart(),
+          rebuildHourlyChart(),
+        ]);
       }
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load data';
@@ -358,23 +428,58 @@
     <!-- Chart Grid -->
     <div class="grid">
       <div class="chart-card">
-        <h3>Daily Likes</h3>
+        <div class="chart-header">
+          <h3>Daily Likes</h3>
+          <select class="range-select" bind:value={likesRange} onchange={() => rebuildLikesChart()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="chart-wrap"><canvas bind:this={likesCanvas}></canvas></div>
       </div>
       <div class="chart-card">
-        <h3>Engagement Spectrum</h3>
+        <div class="chart-header">
+          <h3>Engagement Spectrum</h3>
+          <select class="range-select" bind:value={spectrumRange} onchange={() => rebuildSpectrumChart()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="chart-wrap"><canvas bind:this={spectrumCanvas}></canvas></div>
       </div>
       <div class="chart-card">
-        <h3>Posts per Day</h3>
+        <div class="chart-header">
+          <h3>Posts per Day</h3>
+          <select class="range-select" bind:value={postsRange} onchange={() => rebuildPostsChart()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="chart-wrap"><canvas bind:this={postsCanvas}></canvas></div>
       </div>
       <div class="chart-card">
-        <h3>Cadence Spectrum</h3>
+        <div class="chart-header">
+          <h3>Cadence Spectrum</h3>
+          <select class="range-select" bind:value={cadenceRange} onchange={() => rebuildCadenceChart()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="chart-wrap"><canvas bind:this={cadenceCanvas}></canvas></div>
       </div>
       <div class="chart-card full-width">
-        <h3>Posting Hour Distribution</h3>
+        <div class="chart-header">
+          <h3>Posting Hour Distribution</h3>
+          <select class="range-select" bind:value={hourlyRange} onchange={() => rebuildHourlyChart()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="chart-wrap"><canvas bind:this={hourlyCanvas}></canvas></div>
         <div class="hour-stats">
           <span>Morning (6–11): <strong>{bucketCount(6, 11)}</strong></span>
@@ -451,6 +556,27 @@
     color: #aaa;
     font-weight: 500;
   }
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .chart-header h3 {
+    margin: 0;
+  }
+  .range-select {
+    background: #222;
+    color: #ccc;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .range-select:hover { border-color: #555; }
+  .range-select:focus { outline: none; border-color: #8b5cf6; }
   .chart-wrap {
     position: relative;
     height: 260px;
