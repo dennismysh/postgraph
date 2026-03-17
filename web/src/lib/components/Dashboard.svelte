@@ -869,6 +869,7 @@
       <Heatmap
         title="Posts"
         data={postsHeatmapData}
+        range={postsHeatmapRange}
         valueExtractor={(day) => day.posts}
         colorScale={['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353']}
         tooltipFormatter={postsTooltip}
@@ -888,6 +889,7 @@
       <Heatmap
         title="Engagement"
         data={engagementHeatmapData}
+        range={engagementHeatmapRange}
         valueExtractor={(day) => day.likes + day.replies + day.reposts}
         colorScale={['#161b22', '#4a2800', '#7a4500', '#b36b00', '#f59e0b']}
         tooltipFormatter={engagementTooltip}
@@ -907,6 +909,7 @@
       <Heatmap
         title="Views"
         data={viewsHeatmapData}
+        range={viewsHeatmapRange}
         valueExtractor={(day) => day.views}
         colorScale={['#161b22', '#0a2647', '#144a7a', '#1e6fbf', '#3b82f6']}
         tooltipFormatter={viewsTooltip}

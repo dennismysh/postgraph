@@ -5,12 +5,13 @@
   interface Props {
     title: string;
     data: HeatmapDay[];
+    range: string;
     valueExtractor: (day: HeatmapDay) => number;
     colorScale: string[];
     tooltipFormatter: (day: HeatmapDay) => string;
   }
 
-  let { title, data, valueExtractor, colorScale, tooltipFormatter }: Props = $props();
+  let { title, data, range, valueExtractor, colorScale, tooltipFormatter }: Props = $props();
 
   const CELL_SIZE = 11;
   const CELL_GAP = 2;
@@ -64,23 +65,28 @@
       lookup.set(day.date, day);
     }
 
-    // Build date range: from start of the earliest week to today
+    // Build date range based on the selected range
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    let startDate: Date;
-    if (data.length > 0) {
-      const dates = data.map(d => new Date(d.date + 'T00:00:00'));
-      const earliest = new Date(Math.min(...dates.map(d => d.getTime())));
-      // Align to Sunday
-      earliest.setDate(earliest.getDate() - earliest.getDay());
-      startDate = earliest;
-    } else {
-      // Default to 1 year ago
-      startDate = new Date(today);
-      startDate.setFullYear(startDate.getFullYear() - 1);
-      startDate.setDate(startDate.getDate() - startDate.getDay());
+    let rangeStart = new Date(today);
+    switch (range) {
+      case '3m': rangeStart.setDate(rangeStart.getDate() - 90); break;
+      case '6m': rangeStart.setDate(rangeStart.getDate() - 180); break;
+      case 'all': {
+        if (data.length > 0) {
+          const dates = data.map(d => new Date(d.date + 'T00:00:00'));
+          rangeStart = new Date(Math.min(...dates.map(d => d.getTime())));
+        } else {
+          rangeStart.setFullYear(rangeStart.getFullYear() - 1);
+        }
+        break;
+      }
+      default: rangeStart.setFullYear(rangeStart.getFullYear() - 1); break; // 1y
     }
+    // Align to Sunday
+    rangeStart.setDate(rangeStart.getDate() - rangeStart.getDay());
+    const startDate = rangeStart;
 
     // Generate all dates from startDate to today
     const allCells: CellData[] = [];
