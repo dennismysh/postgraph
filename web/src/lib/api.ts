@@ -188,9 +188,18 @@ export const api = {
     const qs = params.toString();
     return fetchApi<SubjectGraphData>(`/api/graph${qs ? `?${qs}` : ''}`);
   },
-  getSubjectPosts: (subjectId: string, intent?: string) => {
-    const params = intent ? `?intent=${encodeURIComponent(intent)}` : '';
-    return fetchApi<SubjectPostsResponse>(`/api/subjects/${subjectId}/posts${params}`);
+  getSubjectPosts: (subjectId: string, intent?: string, timeRange?: string) => {
+    const params = new URLSearchParams();
+    if (intent) params.set('intent', intent);
+    if (timeRange && timeRange !== 'all') {
+      const match = timeRange.match(/^(\d+)([dh])$/);
+      if (match) {
+        const [, num, unit] = match;
+        params.set('days', unit === 'h' ? '1' : num);
+      }
+    }
+    const qs = params.toString();
+    return fetchApi<SubjectPostsResponse>(`/api/subjects/${subjectId}/posts${qs ? `?${qs}` : ''}`);
   },
   getPost: (id: string) => fetchApi<PostDetail>(`/api/posts/${id}`),
   getPosts: () => fetchApi<Post[]>('/api/posts'),

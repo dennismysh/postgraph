@@ -111,7 +111,7 @@
     sidebarError = null;
     sidebarPosts = [];
     try {
-      const resp = await api.getSubjectPosts(subjectId, currentFilters.intent ?? undefined);
+      const resp = await api.getSubjectPosts(subjectId, currentFilters.intent ?? undefined, currentFilters.timeRange);
       sidebarSubject = resp.subject;
       sidebarPosts = resp.posts.sort((a, b) => b.engagement - a.engagement);
     } catch (e) {
