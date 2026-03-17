@@ -1177,6 +1177,10 @@
     gap: 1rem;
     margin-bottom: 1rem;
   }
+  .heatmap-card {
+    min-width: 0;
+    overflow: hidden;
+  }
   @media (max-width: 1200px) {
     .heatmap-grid { grid-template-columns: 1fr; }
   }
