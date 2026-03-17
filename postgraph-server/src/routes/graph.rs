@@ -66,7 +66,7 @@ pub async fn get_graph(
                    FROM subjects s
                    LEFT JOIN posts p ON p.subject_id = s.id AND p.analyzed_at IS NOT NULL
                      AND p.intent_id = $1
-                     AND ($2::timestamptz IS NULL OR p.created_at >= $2)
+                     AND ($2::timestamptz IS NULL OR p.timestamp >= $2)
                    GROUP BY s.id, s.name, s.color
                    ORDER BY post_count DESC"#,
             )
@@ -98,7 +98,7 @@ pub async fn get_graph(
                       s.color
                FROM subjects s
                LEFT JOIN posts p ON p.subject_id = s.id AND p.analyzed_at IS NOT NULL
-                 AND ($1::timestamptz IS NULL OR p.created_at >= $1)
+                 AND ($1::timestamptz IS NULL OR p.timestamp >= $1)
                GROUP BY s.id, s.name, s.color
                ORDER BY post_count DESC"#,
         )
@@ -143,7 +143,7 @@ pub async fn get_graph(
         r#"SELECT i.id, i.name, i.color, COUNT(p.id)::bigint AS post_count
            FROM intents i
            LEFT JOIN posts p ON p.intent_id = i.id AND p.analyzed_at IS NOT NULL
-             AND ($1::timestamptz IS NULL OR p.created_at >= $1)
+             AND ($1::timestamptz IS NULL OR p.timestamp >= $1)
            GROUP BY i.id, i.name, i.color
            ORDER BY post_count DESC"#,
     )
