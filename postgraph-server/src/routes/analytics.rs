@@ -365,6 +365,105 @@ pub struct HeatmapResponse {
     pub days: Vec<HeatmapDay>,
 }
 
+#[derive(Serialize)]
+pub struct HistogramBucket {
+    pub bucket_min: i64,
+    pub bucket_max: i64,
+    pub label: String,
+    pub count: i64,
+}
+
+#[derive(Serialize)]
+pub struct HistogramResponse {
+    pub engagement: Vec<HistogramBucket>,
+    pub views: Vec<HistogramBucket>,
+}
+
+pub async fn get_histograms(
+    State(state): State<AppState>,
+) -> Result<Json<HistogramResponse>, axum::http::StatusCode> {
+    // Fixed bucket boundaries for engagement (likes + replies + reposts + quotes)
+    let engagement_sql = r#"
+        WITH buckets(bucket_min, bucket_max, label, ord) AS (
+            VALUES
+                (0, 0, '0', 1),
+                (1, 5, '1-5', 2),
+                (6, 10, '6-10', 3),
+                (11, 25, '11-25', 4),
+                (26, 50, '26-50', 5),
+                (51, 100, '51-100', 6),
+                (101, 250, '101-250', 7),
+                (251, 500, '251-500', 8),
+                (501, 1000, '501-1k', 9),
+                (1001, 2147483647, '1k+', 10)
+        ),
+        post_engagement AS (
+            SELECT (likes + replies_count + reposts + quotes) AS total
+            FROM posts
+        )
+        SELECT b.bucket_min::bigint, b.bucket_max::bigint, b.label,
+               COUNT(p.total)::bigint AS count
+        FROM buckets b
+        LEFT JOIN post_engagement p ON p.total >= b.bucket_min AND p.total <= b.bucket_max
+        GROUP BY b.bucket_min, b.bucket_max, b.label, b.ord
+        ORDER BY b.ord
+    "#;
+
+    let engagement_rows: Vec<(i64, i64, String, i64)> = sqlx::query_as(engagement_sql)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Fixed bucket boundaries for views
+    let views_sql = r#"
+        WITH buckets(bucket_min, bucket_max, label, ord) AS (
+            VALUES
+                (0, 0, '0', 1),
+                (1, 100, '1-100', 2),
+                (101, 500, '101-500', 3),
+                (501, 1000, '501-1k', 4),
+                (1001, 5000, '1k-5k', 5),
+                (5001, 10000, '5k-10k', 6),
+                (10001, 50000, '10k-50k', 7),
+                (50001, 100000, '50k-100k', 8),
+                (100001, 2147483647, '100k+', 9)
+        )
+        SELECT b.bucket_min::bigint, b.bucket_max::bigint, b.label,
+               COUNT(p.id)::bigint AS count
+        FROM buckets b
+        LEFT JOIN posts p ON p.views >= b.bucket_min AND p.views <= b.bucket_max
+        GROUP BY b.bucket_min, b.bucket_max, b.label, b.ord
+        ORDER BY b.ord
+    "#;
+
+    let views_rows: Vec<(i64, i64, String, i64)> = sqlx::query_as(views_sql)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let engagement = engagement_rows
+        .into_iter()
+        .map(|(bucket_min, bucket_max, label, count)| HistogramBucket {
+            bucket_min,
+            bucket_max,
+            label,
+            count,
+        })
+        .collect();
+
+    let views = views_rows
+        .into_iter()
+        .map(|(bucket_min, bucket_max, label, count)| HistogramBucket {
+            bucket_min,
+            bucket_max,
+            label,
+            count,
+        })
+        .collect();
+
+    Ok(Json(HistogramResponse { engagement, views }))
+}
+
 pub async fn get_heatmap(
     State(state): State<AppState>,
     Query(query): Query<HeatmapQuery>,
