@@ -61,7 +61,7 @@
 
   let currentFilters: Filters = {
     intent: null,
-    timeRange: 'all',
+    timeRange: '30d',
     minEngagement: 0,
     searchQuery: '',
   };

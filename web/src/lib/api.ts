@@ -178,8 +178,13 @@ export const api = {
   getGraph: (intent?: string, timeRange?: string) => {
     const params = new URLSearchParams();
     if (intent) params.set('intent', intent);
-    const days = timeRange === '7d' ? '7' : timeRange === '30d' ? '30' : timeRange === '90d' ? '90' : null;
-    if (days) params.set('days', days);
+    if (timeRange && timeRange !== 'all') {
+      const match = timeRange.match(/^(\d+)([dh])$/);
+      if (match) {
+        const [, num, unit] = match;
+        params.set('days', unit === 'h' ? '1' : num);
+      }
+    }
     const qs = params.toString();
     return fetchApi<SubjectGraphData>(`/api/graph${qs ? `?${qs}` : ''}`);
   },

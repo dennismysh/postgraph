@@ -9,7 +9,7 @@ export interface Filters {
 
 export const filters = writable<Filters>({
   intent: null,
-  timeRange: 'all',
+  timeRange: '30d',
   minEngagement: 0,
   searchQuery: '',
 });
@@ -17,7 +17,7 @@ export const filters = writable<Filters>({
 export function resetFilters() {
   filters.set({
     intent: null,
-    timeRange: 'all',
+    timeRange: '30d',
     minEngagement: 0,
     searchQuery: '',
   });

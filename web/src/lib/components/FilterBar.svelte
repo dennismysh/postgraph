@@ -130,10 +130,16 @@
   <div class="filter-group">
     <label>Time Range</label>
     <select bind:value={$filters.timeRange} class="time-range-select">
+      <option value="24h">Last 24 Hours</option>
+      <option value="7d">Last 7 Days</option>
+      <option value="14d">Last 2 Weeks</option>
+      <option value="30d">Last 30 Days</option>
+      <option value="60d">Last 2 Months</option>
+      <option value="90d">Last 3 Months</option>
+      <option value="180d">Last 6 Months</option>
+      <option value="270d">Last 9 Months</option>
+      <option value="365d">Last 12 Months</option>
       <option value="all">All Time</option>
-      <option value="7d">Last 7 days</option>
-      <option value="30d">Last 30 days</option>
-      <option value="90d">Last 90 days</option>
     </select>
   </div>
 
