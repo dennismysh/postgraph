@@ -80,7 +80,7 @@ export function lowPassFilter(signal: number[], cutoffRatio = 0.06): number[] {
   const im = new Array(N).fill(0);
   for (let i = 0; i < len; i++) re[i] = signal[i];
   fft(re, im);
-  const cutoff = Math.floor(N * cutoffRatio);
+  const cutoff = Math.max(2, Math.floor(N * cutoffRatio));
   for (let i = cutoff; i <= N - cutoff; i++) {
     re[i] = 0;
     im[i] = 0;
