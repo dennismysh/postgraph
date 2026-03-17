@@ -56,6 +56,7 @@
   let viewsHistCanvas: HTMLCanvasElement = $state(null!);
   let engagementHistChart: Chart | null = $state(null);
   let viewsHistChart: Chart | null = $state(null);
+  let histogramRange = $state('30d');
 
   const timeRanges = [
     { label: 'Last 24 Hours', value: '24h' },
@@ -516,7 +517,8 @@
     if (viewsHistChart) viewsHistChart.destroy();
     if (!engagementHistCanvas || !viewsHistCanvas) return;
 
-    const data = await api.getHistograms();
+    const since = getSinceDate(histogramRange);
+    const data = await api.getHistograms(since);
 
     // Filter out empty buckets from the edges (keep interior zeros)
     const trimBuckets = (buckets: HistogramBucket[]): HistogramBucket[] => {
@@ -1096,13 +1098,27 @@
     <!-- Distribution Histograms -->
     <div class="histogram-charts">
       <div class="chart-card histogram-card">
-        <h3>Engagement Distribution</h3>
+        <div class="chart-header">
+          <h3>Engagement Distribution</h3>
+          <select class="range-select" bind:value={histogramRange} onchange={() => renderHistograms()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="chart-container">
           <canvas bind:this={engagementHistCanvas}></canvas>
         </div>
       </div>
       <div class="chart-card histogram-card">
-        <h3>Views Distribution</h3>
+        <div class="chart-header">
+          <h3>Views Distribution</h3>
+          <select class="range-select" bind:value={histogramRange} onchange={() => renderHistograms()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="chart-container">
           <canvas bind:this={viewsHistCanvas}></canvas>
         </div>

@@ -230,7 +230,12 @@ export const api = {
     const qs = params.toString();
     return fetchApi<EngagementPoint[]>(`/api/analytics/engagement${qs ? `?${qs}` : ''}`);
   },
-  getHistograms: () => fetchApi<HistogramResponse>('/api/analytics/histograms'),
+  getHistograms: (since?: string) => {
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    const qs = params.toString();
+    return fetchApi<HistogramResponse>(`/api/analytics/histograms${qs ? `?${qs}` : ''}`);
+  },
   getHeatmap: (range?: string) => {
     const params = new URLSearchParams();
     if (range) params.set('range', range);

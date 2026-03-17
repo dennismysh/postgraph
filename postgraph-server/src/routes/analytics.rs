@@ -379,9 +379,21 @@ pub struct HistogramResponse {
     pub views: Vec<HistogramBucket>,
 }
 
+#[derive(Deserialize)]
+pub struct HistogramQuery {
+    pub since: Option<String>,
+}
+
 pub async fn get_histograms(
     State(state): State<AppState>,
+    Query(query): Query<HistogramQuery>,
 ) -> Result<Json<HistogramResponse>, axum::http::StatusCode> {
+    let since = query
+        .since
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
     // Fixed bucket boundaries for engagement (likes + replies + reposts + quotes)
     let engagement_sql = r#"
         WITH buckets(bucket_min, bucket_max, label, ord) AS (
@@ -400,6 +412,7 @@ pub async fn get_histograms(
         post_engagement AS (
             SELECT (likes + replies_count + reposts + quotes) AS total
             FROM posts
+            WHERE ($1::timestamptz IS NULL OR timestamp >= $1)
         )
         SELECT b.bucket_min::bigint, b.bucket_max::bigint, b.label,
                COUNT(p.total)::bigint AS count
@@ -410,6 +423,7 @@ pub async fn get_histograms(
     "#;
 
     let engagement_rows: Vec<(i64, i64, String, i64)> = sqlx::query_as(engagement_sql)
+        .bind(since)
         .fetch_all(&state.pool)
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -432,11 +446,13 @@ pub async fn get_histograms(
                COUNT(p.id)::bigint AS count
         FROM buckets b
         LEFT JOIN posts p ON p.views >= b.bucket_min AND p.views <= b.bucket_max
+            AND ($1::timestamptz IS NULL OR p.timestamp >= $1)
         GROUP BY b.bucket_min, b.bucket_max, b.label, b.ord
         ORDER BY b.ord
     "#;
 
     let views_rows: Vec<(i64, i64, String, i64)> = sqlx::query_as(views_sql)
+        .bind(since)
         .fetch_all(&state.pool)
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
