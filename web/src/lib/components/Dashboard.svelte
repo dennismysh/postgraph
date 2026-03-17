@@ -1382,6 +1382,10 @@
     border-radius: 4px;
     font-size: 0.75rem;
     cursor: pointer;
+    appearance: auto;
+    -webkit-appearance: auto;
+    min-width: 100px;
+    flex-shrink: 0;
   }
   .range-select:hover { border-color: #555; }
   .range-select:focus { outline: none; border-color: #4363d8; }
