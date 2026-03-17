@@ -303,6 +303,7 @@
         const cadPeaks = topPeaks(cadenceSpectrum, 1);
         dominantCadence = cadPeaks.length > 0 ? `${cadPeaks[0].period}d` : '—';
 
+        loading = false;
         await buildCharts();
       }
     } catch (e) {
