@@ -162,6 +162,18 @@ export interface HeatmapResponse {
   days: HeatmapDay[];
 }
 
+export interface HistogramBucket {
+  bucket_min: number;
+  bucket_max: number;
+  label: string;
+  count: number;
+}
+
+export interface HistogramResponse {
+  engagement: HistogramBucket[];
+  views: HistogramBucket[];
+}
+
 export const api = {
   getGraph: (intent?: string) => {
     const params = intent ? `?intent=${encodeURIComponent(intent)}` : '';
@@ -218,6 +230,7 @@ export const api = {
     const qs = params.toString();
     return fetchApi<EngagementPoint[]>(`/api/analytics/engagement${qs ? `?${qs}` : ''}`);
   },
+  getHistograms: () => fetchApi<HistogramResponse>('/api/analytics/histograms'),
   getHeatmap: (range?: string) => {
     const params = new URLSearchParams();
     if (range) params.set('range', range);

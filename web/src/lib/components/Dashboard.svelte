@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
   import Heatmap from './Heatmap.svelte';
-  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type EngagementPoint, type Post, type SyncStatus, type PostEngagementPoint, type HeatmapDay } from '$lib/api';
+  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type EngagementPoint, type Post, type SyncStatus, type PostEngagementPoint, type HeatmapDay, type HistogramBucket } from '$lib/api';
 
   let analytics: AnalyticsData | null = $state(null);
   let topicsCanvas: HTMLCanvasElement = $state(null!);
@@ -50,6 +50,12 @@
   let heartbeatCanvas: HTMLCanvasElement = $state(null!);
   let heartbeatChart: Chart | null = $state(null);
   let heartbeatRange = $state('90d');
+
+  // Histogram chart state
+  let engagementHistCanvas: HTMLCanvasElement = $state(null!);
+  let viewsHistCanvas: HTMLCanvasElement = $state(null!);
+  let engagementHistChart: Chart | null = $state(null);
+  let viewsHistChart: Chart | null = $state(null);
 
   const timeRanges = [
     { label: 'Last 24 Hours', value: '24h' },
@@ -451,6 +457,90 @@
     });
   }
 
+  function createHistogramChart(
+    canvas: HTMLCanvasElement,
+    buckets: HistogramBucket[],
+    color: string,
+    label: string,
+  ): Chart {
+    return new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: buckets.map(b => b.label),
+        datasets: [{
+          label,
+          data: buckets.map(b => b.count),
+          backgroundColor: (ctx: { chart: Chart }) => {
+            const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
+            gradient.addColorStop(0, color + 'cc');
+            gradient.addColorStop(1, color + '33');
+            return gradient;
+          },
+          borderColor: color,
+          borderWidth: 1,
+          borderRadius: 3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1a1a1a',
+            borderColor: '#333',
+            borderWidth: 1,
+            padding: 10,
+            callbacks: {
+              label: (ctx: { parsed: { y: number | null } }) => `${ctx.parsed.y ?? 0} posts`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#888', maxRotation: 45 },
+            grid: { color: '#222' },
+          },
+          y: {
+            ticks: { color: '#888', stepSize: 1 },
+            grid: { color: 'rgba(255,255,255,0.03)' },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+  }
+
+  async function renderHistograms() {
+    if (engagementHistChart) engagementHistChart.destroy();
+    if (viewsHistChart) viewsHistChart.destroy();
+    if (!engagementHistCanvas || !viewsHistCanvas) return;
+
+    const data = await api.getHistograms();
+
+    // Filter out empty buckets from the edges (keep interior zeros)
+    const trimBuckets = (buckets: HistogramBucket[]): HistogramBucket[] => {
+      let start = 0;
+      let end = buckets.length - 1;
+      while (end > start && buckets[end].count === 0) end--;
+      return buckets.slice(start, end + 1);
+    };
+
+    engagementHistChart = createHistogramChart(
+      engagementHistCanvas,
+      trimBuckets(data.engagement),
+      '#e6194b',
+      'Posts by Engagement',
+    );
+
+    viewsHistChart = createHistogramChart(
+      viewsHistCanvas,
+      trimBuckets(data.views),
+      '#3b82f6',
+      'Posts by Views',
+    );
+  }
+
   async function loadEngagementChart(
     metric: 'likes' | 'replies' | 'reposts',
     range: string,
@@ -838,6 +928,7 @@
       loadEngagementHeatmap(),
       loadViewsHeatmap(),
       renderHeartbeatChart(),
+      renderHistograms(),
     ]);
 
     // Subjects breakdown — show top 15 subjects, dynamic height
@@ -998,6 +1089,22 @@
         </div>
         <div class="chart-container">
           <canvas bind:this={repostsCanvas}></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Distribution Histograms -->
+    <div class="histogram-charts">
+      <div class="chart-card histogram-card">
+        <h3>Engagement Distribution</h3>
+        <div class="chart-container">
+          <canvas bind:this={engagementHistCanvas}></canvas>
+        </div>
+      </div>
+      <div class="chart-card histogram-card">
+        <h3>Views Distribution</h3>
+        <div class="chart-container">
+          <canvas bind:this={viewsHistCanvas}></canvas>
         </div>
       </div>
     </div>
@@ -1233,6 +1340,16 @@
     .engagement-charts { grid-template-columns: 1fr; }
   }
   .engagement-card .chart-container { height: 250px; }
+  .histogram-charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 768px) {
+    .histogram-charts { grid-template-columns: 1fr; }
+  }
+  .histogram-card .chart-container { height: 280px; }
   .range-select {
     background: #222;
     color: #ccc;
