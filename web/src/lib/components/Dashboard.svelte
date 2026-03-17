@@ -855,6 +855,7 @@
     </div>
 
     <!-- Activity Heatmaps -->
+    <div class="heatmap-grid">
     <div class="chart-card heatmap-card">
       <div class="chart-header">
         <h3>Posting Activity</h3>
@@ -910,6 +911,7 @@
         colorScale={['#161b22', '#0a2647', '#144a7a', '#1e6fbf', '#3b82f6']}
         tooltipFormatter={viewsTooltip}
       />
+    </div>
     </div>
 
     <div class="charts">
@@ -1166,7 +1168,13 @@
   .engagement-row td { padding: 0 0.75rem 0.75rem; border-bottom: 1px solid #222; }
   .post-engagement-chart { height: 200px; position: relative; background: #0d0d0d; border-radius: 6px; padding: 0.5rem; }
   .no-data { color: #666; font-size: 0.8rem; text-align: center; padding: 2rem 0; margin: 0; }
-  .heatmap-card {
+  .heatmap-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
     margin-bottom: 1rem;
+  }
+  @media (max-width: 1200px) {
+    .heatmap-grid { grid-template-columns: 1fr; }
   }
 </style>

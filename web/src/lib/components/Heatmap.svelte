@@ -108,18 +108,19 @@
       cell.color = getColor(cell.value, quantiles);
     }
 
-    // Month labels
+    // Month labels (with minimum spacing to prevent overlap)
+    const MIN_LABEL_GAP = 30;
     const labels: { text: string; x: number }[] = [];
     let lastMonth = -1;
+    let lastLabelX = -MIN_LABEL_GAP;
     for (const cell of allCells) {
       const d = new Date(cell.date + 'T00:00:00');
       const month = d.getMonth();
-      if (month !== lastMonth && cell.row <= 1) {
-        labels.push({
-          text: MONTH_NAMES[month],
-          x: DAY_LABEL_WIDTH + cell.col * CELL_STEP,
-        });
+      const x = DAY_LABEL_WIDTH + cell.col * CELL_STEP;
+      if (month !== lastMonth && cell.row <= 1 && x - lastLabelX >= MIN_LABEL_GAP) {
+        labels.push({ text: MONTH_NAMES[month], x });
         lastMonth = month;
+        lastLabelX = x;
       }
     }
 
