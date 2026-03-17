@@ -56,6 +56,8 @@
   let viewsHistCanvas: HTMLCanvasElement = $state(null!);
   let engagementHistChart: Chart | null = $state(null);
   let viewsHistChart: Chart | null = $state(null);
+  let engagementHistRange = $state('30d');
+  let viewsHistRange = $state('30d');
 
   const timeRanges = [
     { label: 'Last 24 Hours', value: '24h' },
@@ -511,34 +513,42 @@
     });
   }
 
-  async function renderHistograms() {
+  // Filter out empty buckets from the edges (keep interior zeros)
+  function trimBuckets(buckets: HistogramBucket[]): HistogramBucket[] {
+    let start = 0;
+    let end = buckets.length - 1;
+    while (end > start && buckets[end].count === 0) end--;
+    return buckets.slice(start, end + 1);
+  }
+
+  async function renderEngagementHistogram() {
     if (engagementHistChart) engagementHistChart.destroy();
-    if (viewsHistChart) viewsHistChart.destroy();
-    if (!engagementHistCanvas || !viewsHistCanvas) return;
-
-    const data = await api.getHistograms();
-
-    // Filter out empty buckets from the edges (keep interior zeros)
-    const trimBuckets = (buckets: HistogramBucket[]): HistogramBucket[] => {
-      let start = 0;
-      let end = buckets.length - 1;
-      while (end > start && buckets[end].count === 0) end--;
-      return buckets.slice(start, end + 1);
-    };
-
+    if (!engagementHistCanvas) return;
+    const since = getSinceDate(engagementHistRange);
+    const data = await api.getHistograms(since);
     engagementHistChart = createHistogramChart(
       engagementHistCanvas,
       trimBuckets(data.engagement),
       '#e6194b',
       'Posts by Engagement',
     );
+  }
 
+  async function renderViewsHistogram() {
+    if (viewsHistChart) viewsHistChart.destroy();
+    if (!viewsHistCanvas) return;
+    const since = getSinceDate(viewsHistRange);
+    const data = await api.getHistograms(since);
     viewsHistChart = createHistogramChart(
       viewsHistCanvas,
       trimBuckets(data.views),
       '#3b82f6',
       'Posts by Views',
     );
+  }
+
+  async function renderHistograms() {
+    await Promise.all([renderEngagementHistogram(), renderViewsHistogram()]);
   }
 
   async function loadEngagementChart(
@@ -1096,13 +1106,27 @@
     <!-- Distribution Histograms -->
     <div class="histogram-charts">
       <div class="chart-card histogram-card">
-        <h3>Engagement Distribution</h3>
+        <div class="chart-header">
+          <h3>Engagement Distribution</h3>
+          <select class="range-select" bind:value={engagementHistRange} onchange={() => renderEngagementHistogram()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="chart-container">
           <canvas bind:this={engagementHistCanvas}></canvas>
         </div>
       </div>
       <div class="chart-card histogram-card">
-        <h3>Views Distribution</h3>
+        <div class="chart-header">
+          <h3>Views Distribution</h3>
+          <select class="range-select" bind:value={viewsHistRange} onchange={() => renderViewsHistogram()}>
+            {#each timeRanges as range}
+              <option value={range.value}>{range.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="chart-container">
           <canvas bind:this={viewsHistCanvas}></canvas>
         </div>
