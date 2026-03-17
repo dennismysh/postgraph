@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
-  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type EngagementPoint, type Post, type SyncStatus, type PostEngagementPoint } from '$lib/api';
+  import Heatmap from './Heatmap.svelte';
+  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type EngagementPoint, type Post, type SyncStatus, type PostEngagementPoint, type HeatmapDay } from '$lib/api';
 
   let analytics: AnalyticsData | null = $state(null);
   let topicsCanvas: HTMLCanvasElement = $state(null!);
@@ -36,6 +37,14 @@
   let repliesRange = $state('30d');
   let repostsRange = $state('30d');
   let allEngagementData: EngagementPoint[] = $state([]);
+
+  // Heatmap state
+  let postsHeatmapData: HeatmapDay[] = $state([]);
+  let engagementHeatmapData: HeatmapDay[] = $state([]);
+  let viewsHeatmapData: HeatmapDay[] = $state([]);
+  let postsHeatmapRange = $state('1y');
+  let engagementHeatmapRange = $state('1y');
+  let viewsHeatmapRange = $state('1y');
 
   const timeRanges = [
     { label: 'Last 24 Hours', value: '24h' },
@@ -268,6 +277,45 @@
 
   async function loadAllEngagement() {
     allEngagementData = await api.getEngagement();
+  }
+
+  async function loadHeatmap(range: string): Promise<HeatmapDay[]> {
+    const resp = await api.getHeatmap(range);
+    return resp.days;
+  }
+
+  async function loadPostsHeatmap() {
+    postsHeatmapData = await loadHeatmap(postsHeatmapRange);
+  }
+
+  async function loadEngagementHeatmap() {
+    engagementHeatmapData = await loadHeatmap(engagementHeatmapRange);
+  }
+
+  async function loadViewsHeatmap() {
+    viewsHeatmapData = await loadHeatmap(viewsHeatmapRange);
+  }
+
+  function postsTooltip(day: HeatmapDay): string {
+    const d = new Date(day.date + 'T00:00:00');
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const breakdown = Object.entries(day.media_types)
+      .map(([type, count]) => `${count} ${type}`)
+      .join(', ');
+    return `${dateStr}: ${day.posts} post${day.posts !== 1 ? 's' : ''}${breakdown ? ` (${breakdown})` : ''}`;
+  }
+
+  function engagementTooltip(day: HeatmapDay): string {
+    const d = new Date(day.date + 'T00:00:00');
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const total = day.likes + day.replies + day.reposts;
+    return `${dateStr}: ${total} total (${day.likes} likes, ${day.replies} replies, ${day.reposts} reposts)`;
+  }
+
+  function viewsTooltip(day: HeatmapDay): string {
+    const d = new Date(day.date + 'T00:00:00');
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${dateStr}: ${day.views.toLocaleString()} views (across ${day.posts} post${day.posts !== 1 ? 's' : ''})`;
   }
 
   async function loadEngagementChart(
@@ -649,7 +697,14 @@
 
     // Engagement charts – load all data once, render 3 independent charts
     await loadAllEngagement();
-    await Promise.all([renderLikesChart(), renderRepliesChart(), renderRepostsChart()]);
+    await Promise.all([
+      renderLikesChart(),
+      renderRepliesChart(),
+      renderRepostsChart(),
+      loadPostsHeatmap(),
+      loadEngagementHeatmap(),
+      loadViewsHeatmap(),
+    ]);
 
     // Subjects breakdown — show top 15 subjects, dynamic height
     const topSubjects = analytics.subjects.slice(0, 15);
@@ -797,6 +852,64 @@
           <canvas bind:this={repostsCanvas}></canvas>
         </div>
       </div>
+    </div>
+
+    <!-- Activity Heatmaps -->
+    <div class="chart-card heatmap-card">
+      <div class="chart-header">
+        <h3>Posting Activity</h3>
+        <select class="range-select" bind:value={postsHeatmapRange} onchange={() => loadPostsHeatmap()}>
+          <option value="3m">3 Months</option>
+          <option value="6m">6 Months</option>
+          <option value="1y">1 Year</option>
+          <option value="all">All Time</option>
+        </select>
+      </div>
+      <Heatmap
+        title="Posts"
+        data={postsHeatmapData}
+        valueExtractor={(day) => day.posts}
+        colorScale={['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353']}
+        tooltipFormatter={postsTooltip}
+      />
+    </div>
+
+    <div class="chart-card heatmap-card">
+      <div class="chart-header">
+        <h3>Engagement</h3>
+        <select class="range-select" bind:value={engagementHeatmapRange} onchange={() => loadEngagementHeatmap()}>
+          <option value="3m">3 Months</option>
+          <option value="6m">6 Months</option>
+          <option value="1y">1 Year</option>
+          <option value="all">All Time</option>
+        </select>
+      </div>
+      <Heatmap
+        title="Engagement"
+        data={engagementHeatmapData}
+        valueExtractor={(day) => day.likes + day.replies + day.reposts}
+        colorScale={['#161b22', '#4a2800', '#7a4500', '#b36b00', '#f59e0b']}
+        tooltipFormatter={engagementTooltip}
+      />
+    </div>
+
+    <div class="chart-card heatmap-card">
+      <div class="chart-header">
+        <h3>Views</h3>
+        <select class="range-select" bind:value={viewsHeatmapRange} onchange={() => loadViewsHeatmap()}>
+          <option value="3m">3 Months</option>
+          <option value="6m">6 Months</option>
+          <option value="1y">1 Year</option>
+          <option value="all">All Time</option>
+        </select>
+      </div>
+      <Heatmap
+        title="Views"
+        data={viewsHeatmapData}
+        valueExtractor={(day) => day.views}
+        colorScale={['#161b22', '#0a2647', '#144a7a', '#1e6fbf', '#3b82f6']}
+        tooltipFormatter={viewsTooltip}
+      />
     </div>
 
     <div class="charts">
@@ -1053,4 +1166,7 @@
   .engagement-row td { padding: 0 0.75rem 0.75rem; border-bottom: 1px solid #222; }
   .post-engagement-chart { height: 200px; position: relative; background: #0d0d0d; border-radius: 6px; padding: 0.5rem; }
   .no-data { color: #666; font-size: 0.8rem; text-align: center; padding: 2rem 0; margin: 0; }
+  .heatmap-card {
+    margin-bottom: 1rem;
+  }
 </style>
