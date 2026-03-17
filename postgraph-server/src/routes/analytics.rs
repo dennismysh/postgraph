@@ -2,6 +2,7 @@ use crate::db;
 use crate::state::AppState;
 use axum::{Json, extract::Path, extract::Query, extract::State};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Serialize)]
 pub struct AnalyticsData {
@@ -341,4 +342,82 @@ pub async fn get_post_engagement(
         .collect();
 
     Ok(Json(points))
+}
+
+#[derive(Deserialize)]
+pub struct HeatmapQuery {
+    pub range: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct HeatmapDay {
+    pub date: String,
+    pub posts: i64,
+    pub likes: i64,
+    pub replies: i64,
+    pub reposts: i64,
+    pub views: i64,
+    pub media_types: HashMap<String, i64>,
+}
+
+#[derive(Serialize)]
+pub struct HeatmapResponse {
+    pub days: Vec<HeatmapDay>,
+}
+
+pub async fn get_heatmap(
+    State(state): State<AppState>,
+    Query(query): Query<HeatmapQuery>,
+) -> Result<Json<HeatmapResponse>, axum::http::StatusCode> {
+    let since = match query.range.as_deref() {
+        Some("3m") => chrono::Utc::now() - chrono::Duration::days(90),
+        Some("6m") => chrono::Utc::now() - chrono::Duration::days(180),
+        Some("all") => chrono::DateTime::<chrono::Utc>::MIN_UTC,
+        _ => chrono::Utc::now() - chrono::Duration::days(365), // default 1y
+    };
+
+    let rows: Vec<(String, i64, i64, i64, i64, i64, Option<String>)> = sqlx::query_as(
+        r#"SELECT DATE(timestamp)::text AS date,
+                  COUNT(*) AS posts,
+                  SUM(likes)::bigint AS likes,
+                  SUM(replies_count)::bigint AS replies,
+                  SUM(reposts)::bigint AS reposts,
+                  SUM(views)::bigint AS views,
+                  media_type
+           FROM posts
+           WHERE timestamp >= $1
+           GROUP BY DATE(timestamp), media_type
+           ORDER BY date"#,
+    )
+    .bind(since)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Aggregate rows by date (multiple rows per date due to media_type grouping)
+    let mut day_map: std::collections::BTreeMap<String, HeatmapDay> =
+        std::collections::BTreeMap::new();
+    for (date, posts, likes, replies, reposts, views, media_type) in rows {
+        let entry = day_map.entry(date.clone()).or_insert_with(|| HeatmapDay {
+            date,
+            posts: 0,
+            likes: 0,
+            replies: 0,
+            reposts: 0,
+            views: 0,
+            media_types: HashMap::new(),
+        });
+        entry.posts += posts;
+        entry.likes += likes;
+        entry.replies += replies;
+        entry.reposts += reposts;
+        entry.views += views;
+        if let Some(mt) = media_type {
+            *entry.media_types.entry(mt).or_insert(0) += posts;
+        }
+    }
+
+    Ok(Json(HeatmapResponse {
+        days: day_map.into_values().collect(),
+    }))
 }
