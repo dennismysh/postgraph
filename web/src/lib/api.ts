@@ -148,6 +148,20 @@ export interface PostEngagementPoint {
   quotes: number;
 }
 
+export interface HeatmapDay {
+  date: string;
+  posts: number;
+  likes: number;
+  replies: number;
+  reposts: number;
+  views: number;
+  media_types: Record<string, number>;
+}
+
+export interface HeatmapResponse {
+  days: HeatmapDay[];
+}
+
 export const api = {
   getGraph: (intent?: string) => {
     const params = intent ? `?intent=${encodeURIComponent(intent)}` : '';
@@ -203,5 +217,11 @@ export const api = {
     if (grouping) params.set('grouping', grouping);
     const qs = params.toString();
     return fetchApi<EngagementPoint[]>(`/api/analytics/engagement${qs ? `?${qs}` : ''}`);
+  },
+  getHeatmap: (range?: string) => {
+    const params = new URLSearchParams();
+    if (range) params.set('range', range);
+    const qs = params.toString();
+    return fetchApi<HeatmapResponse>(`/api/analytics/heatmap${qs ? `?${qs}` : ''}`);
   },
 };
