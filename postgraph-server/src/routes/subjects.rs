@@ -1,6 +1,7 @@
 use crate::db;
 use crate::state::AppState;
 use axum::{Json, extract::Path, extract::Query, extract::State};
+use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -22,6 +23,7 @@ pub struct SubjectPostsResponse {
 #[derive(Deserialize)]
 pub struct SubjectPostsQuery {
     pub intent: Option<String>,
+    pub days: Option<i32>,
 }
 
 pub async fn get_subject_posts(
@@ -49,7 +51,11 @@ pub async fn get_subject_posts(
         None
     };
 
-    let posts = db::get_posts_by_subject(&state.pool, subject_id, intent_id)
+    let cutoff = query
+        .days
+        .map(|d| Utc::now() - Duration::days(i64::from(d)));
+
+    let posts = db::get_posts_by_subject(&state.pool, subject_id, intent_id, cutoff)
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 

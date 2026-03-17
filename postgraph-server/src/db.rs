@@ -475,20 +475,23 @@ pub async fn get_posts_by_subject(
     pool: &PgPool,
     subject_id: uuid::Uuid,
     intent_filter: Option<uuid::Uuid>,
+    cutoff: Option<chrono::DateTime<chrono::Utc>>,
 ) -> sqlx::Result<Vec<Post>> {
     if let Some(intent_id) = intent_filter {
         sqlx::query_as::<_, Post>(
-            "SELECT * FROM posts WHERE subject_id = $1 AND intent_id = $2 ORDER BY timestamp DESC",
+            "SELECT * FROM posts WHERE subject_id = $1 AND intent_id = $2 AND ($3::timestamptz IS NULL OR timestamp >= $3) ORDER BY timestamp DESC",
         )
         .bind(subject_id)
         .bind(intent_id)
+        .bind(cutoff)
         .fetch_all(pool)
         .await
     } else {
         sqlx::query_as::<_, Post>(
-            "SELECT * FROM posts WHERE subject_id = $1 ORDER BY timestamp DESC",
+            "SELECT * FROM posts WHERE subject_id = $1 AND ($2::timestamptz IS NULL OR timestamp >= $2) ORDER BY timestamp DESC",
         )
         .bind(subject_id)
+        .bind(cutoff)
         .fetch_all(pool)
         .await
     }
