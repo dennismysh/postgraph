@@ -157,7 +157,7 @@
 
   const unsubFilters = filters.subscribe((f) => {
     const needsRefetch = currentFilters.intent !== f.intent || currentFilters.timeRange !== f.timeRange;
-    currentFilters = f;
+    currentFilters = { ...f };
     if (needsRefetch) {
       loadGraph(f.intent ?? undefined, f.timeRange);
     } else {
