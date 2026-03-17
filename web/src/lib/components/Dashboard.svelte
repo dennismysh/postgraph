@@ -920,7 +920,7 @@
 
     // Engagement charts – load all data once, render 3 independent charts
     await loadAllEngagement();
-    await Promise.all([
+    await Promise.allSettled([
       renderLikesChart(),
       renderRepliesChart(),
       renderRepostsChart(),
