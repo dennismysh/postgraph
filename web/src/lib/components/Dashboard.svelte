@@ -46,6 +46,11 @@
   let engagementHeatmapRange = $state('1y');
   let viewsHeatmapRange = $state('1y');
 
+  // Heartbeat chart state
+  let heartbeatCanvas: HTMLCanvasElement = $state(null!);
+  let heartbeatChart: Chart | null = $state(null);
+  let heartbeatRange = $state('90d');
+
   const timeRanges = [
     { label: 'Last 24 Hours', value: '24h' },
     { label: 'Last 7 Days', value: '7d' },
@@ -316,6 +321,134 @@
     const d = new Date(day.date + 'T00:00:00');
     const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     return `${dateStr}: ${day.views.toLocaleString()} views (across ${day.posts} post${day.posts !== 1 ? 's' : ''})`;
+  }
+
+  async function renderHeartbeatChart() {
+    if (heartbeatChart) heartbeatChart.destroy();
+    if (!heartbeatCanvas) return;
+
+    // Load heatmap data for the selected range
+    const heatmapRange = heartbeatRange === '24h' ? '3m'
+      : heartbeatRange === '7d' ? '3m'
+      : heartbeatRange === '14d' ? '3m'
+      : heartbeatRange === '30d' ? '3m'
+      : heartbeatRange === '60d' ? '3m'
+      : heartbeatRange === '90d' ? '3m'
+      : heartbeatRange === '180d' ? '6m'
+      : heartbeatRange === 'all' ? 'all'
+      : '1y';
+    const resp = await api.getHeatmap(heatmapRange);
+    let days = resp.days;
+
+    // Filter to the selected range
+    const since = getSinceDate(heartbeatRange);
+    if (since) {
+      const sinceDate = since.slice(0, 10);
+      days = days.filter(d => d.date >= sinceDate);
+    }
+
+    if (days.length === 0) return;
+
+    // Fill daily gaps
+    const lookup = new Map<string, HeatmapDay>();
+    for (const day of days) {
+      lookup.set(day.date, day);
+    }
+    const startDate = new Date(days[0].date + 'T00:00:00');
+    const endDate = new Date(days[days.length - 1].date + 'T00:00:00');
+    const filledDays: HeatmapDay[] = [];
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const key = d.toISOString().slice(0, 10);
+      filledDays.push(lookup.get(key) ?? { date: key, posts: 0, likes: 0, replies: 0, reposts: 0, views: 0, media_types: {} });
+    }
+
+    // Build labels
+    const labels = filledDays.map(d => {
+      const date = new Date(d.date + 'T00:00:00');
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+
+    // Build ECG-style posts data: sharp spikes with zero on either side
+    const postsRaw = filledDays.map(d => d.posts);
+    const maxPosts = Math.max(...postsRaw, 1);
+
+    // Build engagement data
+    const engagementRaw = filledDays.map(d => d.likes + d.replies + d.reposts);
+
+    heartbeatChart = new Chart(heartbeatCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Posts',
+            data: postsRaw,
+            borderColor: '#39d353',
+            borderWidth: 1.5,
+            tension: 0,
+            pointRadius: 0,
+            fill: false,
+            yAxisID: 'y',
+          },
+          {
+            label: 'Engagement',
+            data: engagementRaw,
+            borderColor: '#f59e0b',
+            borderWidth: 1.5,
+            tension: 0,
+            pointRadius: 0,
+            fill: false,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: {
+          legend: {
+            display: true,
+            labels: { color: '#888', boxWidth: 12 },
+          },
+          tooltip: {
+            backgroundColor: '#1a1a1a',
+            borderColor: '#333',
+            borderWidth: 1,
+            padding: 10,
+            callbacks: {
+              title: (items: { dataIndex: number }[]) => {
+                const idx = items[0].dataIndex;
+                const day = filledDays[idx];
+                const d = new Date(day.date + 'T00:00:00');
+                return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#444', maxTicksLimit: 12, maxRotation: 0 },
+            grid: { color: 'rgba(255,255,255,0.03)' },
+          },
+          y: {
+            position: 'left',
+            title: { display: true, text: 'Posts', color: '#39d353', font: { size: 11 } },
+            ticks: { color: '#39d353', stepSize: 1 },
+            grid: { color: 'rgba(255,255,255,0.03)' },
+            beginAtZero: true,
+            max: maxPosts + 1,
+          },
+          y1: {
+            position: 'right',
+            title: { display: true, text: 'Engagement', color: '#f59e0b', font: { size: 11 } },
+            ticks: { color: '#f59e0b' },
+            grid: { drawOnChartArea: false },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
   }
 
   async function loadEngagementChart(
@@ -704,6 +837,7 @@
       loadPostsHeatmap(),
       loadEngagementHeatmap(),
       loadViewsHeatmap(),
+      renderHeartbeatChart(),
     ]);
 
     // Subjects breakdown — show top 15 subjects, dynamic height
@@ -809,6 +943,20 @@
       </div>
       <div class="chart-container">
         <canvas bind:this={viewsCanvas}></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card heartbeat-card">
+      <div class="chart-header">
+        <h3>Account Pulse</h3>
+        <select class="range-select" bind:value={heartbeatRange} onchange={() => renderHeartbeatChart()}>
+          {#each timeRanges as range}
+            <option value={range.value}>{range.label}</option>
+          {/each}
+        </select>
+      </div>
+      <div class="chart-container heartbeat-container">
+        <canvas bind:this={heartbeatCanvas}></canvas>
       </div>
     </div>
 
@@ -1073,6 +1221,8 @@
   h3 { margin: 0 0 0.5rem; font-size: 1rem; }
   .grouping-label { font-size: 0.75rem; color: #888; font-weight: normal; }
   .views-card { margin-bottom: 1rem; }
+  .heartbeat-card { margin-bottom: 1rem; }
+  .heartbeat-container { height: 200px; background: #0a0a0a; border-radius: 6px; }
   .engagement-charts {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
