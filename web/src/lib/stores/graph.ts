@@ -17,7 +17,8 @@ export async function loadGraph(intent?: string, timeRange?: string) {
     graphData.set(data);
 
     const graph = new MultiGraph();
-    for (const node of data.nodes) {
+    const visibleNodes = data.nodes.filter(n => n.post_count > 0);
+    for (const node of visibleNodes) {
       const size = Math.log(node.post_count + 1) * 4 + 3;
       graph.addNode(node.id, {
         label: node.label,
