@@ -175,9 +175,13 @@ export interface HistogramResponse {
 }
 
 export const api = {
-  getGraph: (intent?: string) => {
-    const params = intent ? `?intent=${encodeURIComponent(intent)}` : '';
-    return fetchApi<SubjectGraphData>(`/api/graph${params}`);
+  getGraph: (intent?: string, timeRange?: string) => {
+    const params = new URLSearchParams();
+    if (intent) params.set('intent', intent);
+    const days = timeRange === '7d' ? '7' : timeRange === '30d' ? '30' : timeRange === '90d' ? '90' : null;
+    if (days) params.set('days', days);
+    const qs = params.toString();
+    return fetchApi<SubjectGraphData>(`/api/graph${qs ? `?${qs}` : ''}`);
   },
   getSubjectPosts: (subjectId: string, intent?: string) => {
     const params = intent ? `?intent=${encodeURIComponent(intent)}` : '';
