@@ -61,8 +61,7 @@
 
   let currentFilters: Filters = {
     intent: null,
-    dateFrom: null,
-    dateTo: null,
+    timeRange: 'all',
     minEngagement: 0,
     searchQuery: '',
   };
@@ -157,11 +156,10 @@
   });
 
   const unsubFilters = filters.subscribe((f) => {
-    const intentChanged = currentFilters.intent !== f.intent;
+    const needsRefetch = currentFilters.intent !== f.intent || currentFilters.timeRange !== f.timeRange;
     currentFilters = f;
-    if (intentChanged) {
-      // Re-fetch graph data when intent filter changes
-      loadGraph(f.intent ?? undefined);
+    if (needsRefetch) {
+      loadGraph(f.intent ?? undefined, f.timeRange);
     } else {
       applyFilters(f);
     }

@@ -1,5 +1,6 @@
 use crate::state::AppState;
 use axum::{Json, extract::Query, extract::State};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -37,14 +38,18 @@ pub struct SubjectGraphData {
 #[derive(Deserialize)]
 pub struct GraphQuery {
     pub intent: Option<String>,
+    pub days: Option<i32>,
 }
 
 pub async fn get_graph(
     State(state): State<AppState>,
     Query(query): Query<GraphQuery>,
 ) -> Result<Json<SubjectGraphData>, axum::http::StatusCode> {
+    let cutoff: Option<DateTime<Utc>> = query
+        .days
+        .map(|d| Utc::now() - Duration::days(i64::from(d)));
+
     let nodes = if let Some(ref intent_name) = query.intent {
-        // Look up intent ID first
         let intent_row: Option<(uuid::Uuid,)> =
             sqlx::query_as("SELECT id FROM intents WHERE name = $1")
                 .bind(intent_name)
@@ -59,11 +64,14 @@ pub async fn get_graph(
                           COALESCE(AVG(p.likes + p.replies_count + p.reposts + p.quotes), 0)::float8 AS avg_engagement,
                           s.color
                    FROM subjects s
-                   LEFT JOIN posts p ON p.subject_id = s.id AND p.analyzed_at IS NOT NULL AND p.intent_id = $1
+                   LEFT JOIN posts p ON p.subject_id = s.id AND p.analyzed_at IS NOT NULL
+                     AND p.intent_id = $1
+                     AND ($2::timestamptz IS NULL OR p.created_at >= $2)
                    GROUP BY s.id, s.name, s.color
                    ORDER BY post_count DESC"#,
             )
             .bind(intent_id)
+            .bind(cutoff)
             .fetch_all(&state.pool)
             .await
             .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -90,9 +98,11 @@ pub async fn get_graph(
                       s.color
                FROM subjects s
                LEFT JOIN posts p ON p.subject_id = s.id AND p.analyzed_at IS NOT NULL
+                 AND ($1::timestamptz IS NULL OR p.created_at >= $1)
                GROUP BY s.id, s.name, s.color
                ORDER BY post_count DESC"#,
         )
+        .bind(cutoff)
         .fetch_all(&state.pool)
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -133,9 +143,11 @@ pub async fn get_graph(
         r#"SELECT i.id, i.name, i.color, COUNT(p.id)::bigint AS post_count
            FROM intents i
            LEFT JOIN posts p ON p.intent_id = i.id AND p.analyzed_at IS NOT NULL
+             AND ($1::timestamptz IS NULL OR p.created_at >= $1)
            GROUP BY i.id, i.name, i.color
            ORDER BY post_count DESC"#,
     )
+    .bind(cutoff)
     .fetch_all(&state.pool)
     .await
     .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;

@@ -9,11 +9,11 @@ export const selectedNode = writable<string | null>(null);
 export const loading = writable(false);
 export const error = writable<string | null>(null);
 
-export async function loadGraph(intent?: string) {
+export async function loadGraph(intent?: string, timeRange?: string) {
   loading.set(true);
   error.set(null);
   try {
-    const data = await api.getGraph(intent);
+    const data = await api.getGraph(intent, timeRange);
     graphData.set(data);
 
     const graph = new MultiGraph();

@@ -60,7 +60,7 @@
           syncStatusData = null;
           if (syncInterval) clearInterval(syncInterval);
           syncInterval = null;
-          await loadGraph($filters.intent ?? undefined);
+          await loadGraph($filters.intent ?? undefined, $filters.timeRange);
           setTimeout(() => { syncStatus = ''; }, 5000);
         }
       } catch {
@@ -103,7 +103,7 @@
           reanalyzeStatus = 'Reanalysis complete!';
           if (reanalyzeInterval) clearInterval(reanalyzeInterval);
           reanalyzeInterval = null;
-          await loadGraph($filters.intent ?? undefined);
+          await loadGraph($filters.intent ?? undefined, $filters.timeRange);
           setTimeout(() => { reanalyzeStatus = ''; }, 5000);
         }
       } catch {
@@ -128,10 +128,13 @@
   </div>
 
   <div class="filter-group">
-    <label>From</label>
-    <input type="date" bind:value={$filters.dateFrom} />
-    <label>To</label>
-    <input type="date" bind:value={$filters.dateTo} />
+    <label>Time Range</label>
+    <select bind:value={$filters.timeRange} class="time-range-select">
+      <option value="all">All Time</option>
+      <option value="7d">Last 7 days</option>
+      <option value="30d">Last 30 days</option>
+      <option value="90d">Last 90 days</option>
+    </select>
   </div>
 
   <div class="filter-group">
@@ -192,13 +195,7 @@
     gap: 0.3rem;
     font-size: 0.8rem;
   }
-  .filter-group input[type="date"] {
-    background: #1a1a1a;
-    border: 1px solid #444;
-    color: #eee;
-    padding: 0.2rem;
-    border-radius: 4px;
-  }
+  .time-range-select,
   .intent-select {
     background: #1a1a1a;
     border: 1px solid #444;

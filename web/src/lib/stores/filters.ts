@@ -2,16 +2,14 @@ import { writable } from 'svelte/store';
 
 export interface Filters {
   intent: string | null;
-  dateFrom: string | null;
-  dateTo: string | null;
+  timeRange: string;
   minEngagement: number;
   searchQuery: string;
 }
 
 export const filters = writable<Filters>({
   intent: null,
-  dateFrom: null,
-  dateTo: null,
+  timeRange: 'all',
   minEngagement: 0,
   searchQuery: '',
 });
@@ -19,8 +17,7 @@ export const filters = writable<Filters>({
 export function resetFilters() {
   filters.set({
     intent: null,
-    dateFrom: null,
-    dateTo: null,
+    timeRange: 'all',
     minEngagement: 0,
     searchQuery: '',
   });
