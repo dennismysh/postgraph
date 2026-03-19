@@ -72,9 +72,9 @@ pub async fn get_engagement(
                       es.likes,
                       es.replies_count,
                       es.reposts,
-                      LAG(es.likes) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_likes,
-                      LAG(es.replies_count) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_replies,
-                      LAG(es.reposts) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_reposts,
+                      MAX(es.likes) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_likes,
+                      MAX(es.replies_count) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_replies,
+                      MAX(es.reposts) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_reposts,
                       p.timestamp AS post_timestamp
                FROM engagement_snapshots es
                JOIN posts p ON p.id = es.post_id
@@ -159,7 +159,7 @@ async fn get_views_from_snapshots(
                SELECT es.captured_at,
                       es.post_id,
                       es.views,
-                      LAG(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_views,
+                      MAX(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_views,
                       p.timestamp AS post_timestamp
                FROM engagement_snapshots es
                JOIN posts p ON p.id = es.post_id
@@ -237,9 +237,9 @@ pub async fn get_analytics(
                       es.likes,
                       es.replies_count,
                       es.reposts,
-                      LAG(es.likes) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_likes,
-                      LAG(es.replies_count) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_replies,
-                      LAG(es.reposts) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_reposts,
+                      MAX(es.likes) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_likes,
+                      MAX(es.replies_count) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_replies,
+                      MAX(es.reposts) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_reposts,
                       p.timestamp AS post_timestamp
                FROM engagement_snapshots es
                JOIN posts p ON p.id = es.post_id
@@ -283,7 +283,7 @@ pub async fn get_analytics(
     let (total_views,): (i64,) = sqlx::query_as(
         r#"WITH ordered_snapshots AS (
                SELECT es.views,
-                      LAG(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_views
+                      MAX(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_views
                FROM engagement_snapshots es
            )
            SELECT COALESCE(SUM(GREATEST(views - COALESCE(prev_views, 0), 0)), 0)::bigint
@@ -560,7 +560,7 @@ pub async fn get_views_range_sums(
                SELECT es.captured_at,
                       es.post_id,
                       es.views,
-                      LAG(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at) AS prev_views,
+                      MAX(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_views,
                       p.timestamp AS post_timestamp
                FROM engagement_snapshots es
                JOIN posts p ON p.id = es.post_id
