@@ -10,6 +10,7 @@ pub struct AnalyticsData {
     pub analyzed_posts: usize,
     pub total_subjects: usize,
     pub total_intents: usize,
+    pub total_views: i64,
     pub subjects: Vec<SubjectSummary>,
     pub engagement_over_time: Vec<EngagementPoint>,
 }
@@ -162,7 +163,6 @@ async fn get_views_from_snapshots(
                       p.timestamp AS post_timestamp
                FROM engagement_snapshots es
                JOIN posts p ON p.id = es.post_id
-               WHERE es.views > 0
            ),
            with_deltas AS (
                SELECT CASE
@@ -276,11 +276,18 @@ pub async fn get_analytics(
 
     let analyzed_count = posts.iter().filter(|p| p.analyzed_at.is_some()).count();
 
+    let (total_views,): (i64,) =
+        sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
     Ok(Json(AnalyticsData {
         total_posts: posts.len(),
         analyzed_posts: analyzed_count,
         total_subjects: subjects.len(),
         total_intents: intents.len(),
+        total_views,
         subjects: subject_summaries,
         engagement_over_time,
     }))
@@ -510,4 +517,66 @@ pub async fn get_heatmap(
     Ok(Json(HeatmapResponse {
         days: day_map.into_values().collect(),
     }))
+}
+
+#[derive(Serialize)]
+pub struct ViewsRangeSums {
+    pub sums: HashMap<String, i64>,
+}
+
+pub async fn get_views_range_sums(
+    State(state): State<AppState>,
+) -> Result<Json<ViewsRangeSums>, axum::http::StatusCode> {
+    let ranges: &[(&str, Option<i64>)] = &[
+        ("24h", Some(1)),
+        ("7d", Some(7)),
+        ("14d", Some(14)),
+        ("30d", Some(30)),
+        ("60d", Some(60)),
+        ("90d", Some(90)),
+        ("180d", Some(180)),
+        ("270d", Some(270)),
+        ("365d", Some(365)),
+        ("all", None),
+    ];
+
+    let mut sums = HashMap::new();
+
+    for &(key, days) in ranges {
+        let total: i64 = match days {
+            None => {
+                let (v,): (i64,) =
+                    sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
+                        .fetch_one(&state.pool)
+                        .await
+                        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                v
+            }
+            Some(d) => {
+                let boundary = chrono::Utc::now() - chrono::Duration::days(d);
+                let (v,): (i64,) = sqlx::query_as(
+                    r#"SELECT COALESCE(SUM(
+                        CASE
+                            WHEN p.timestamp >= $1 THEN p.views
+                            ELSE GREATEST(p.views - COALESCE(boundary.views, 0), 0)
+                        END
+                    ), 0)::bigint
+                    FROM posts p
+                    LEFT JOIN LATERAL (
+                        SELECT es.views FROM engagement_snapshots es
+                        WHERE es.post_id = p.id AND es.captured_at <= $1
+                        ORDER BY es.captured_at DESC LIMIT 1
+                    ) boundary ON TRUE"#,
+                )
+                .bind(boundary)
+                .fetch_one(&state.pool)
+                .await
+                .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                v
+            }
+        };
+        sums.insert(key.to_string(), total);
+    }
+
+    Ok(Json(ViewsRangeSums { sums }))
 }

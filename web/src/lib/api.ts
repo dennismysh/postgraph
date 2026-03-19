@@ -53,6 +53,7 @@ export interface AnalyticsData {
   analyzed_posts: number;
   total_subjects: number;
   total_intents: number;
+  total_views: number;
   subjects: SubjectSummary[];
   engagement_over_time: EngagementPoint[];
 }
@@ -137,6 +138,10 @@ export interface AnalyzeStatus {
 export interface ViewsPoint {
   date: string;
   views: number;
+}
+
+export interface ViewsRangeSums {
+  sums: Record<string, number>;
 }
 
 export interface PostEngagementPoint {
@@ -260,4 +265,5 @@ export const api = {
     const qs = params.toString();
     return fetchApi<HeatmapResponse>(`/api/analytics/heatmap${qs ? `?${qs}` : ''}`);
   },
+  getViewsRangeSums: () => fetchApi<ViewsRangeSums>('/api/analytics/views/range-sums'),
 };

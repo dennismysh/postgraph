@@ -231,6 +231,10 @@ async fn main() {
         .route("/api/analytics", get(routes::analytics::get_analytics))
         .route("/api/analytics/views", get(routes::analytics::get_views))
         .route(
+            "/api/analytics/views/range-sums",
+            get(routes::analytics::get_views_range_sums),
+        )
+        .route(
             "/api/analytics/heatmap",
             get(routes::analytics::get_heatmap),
         )
