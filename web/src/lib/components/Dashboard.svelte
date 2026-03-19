@@ -651,20 +651,9 @@
     repostsChart = await loadEngagementChart('reposts', repostsRange, repostsCanvas, repostsChart, '#4363d8', 'Reposts');
   }
 
-  function computeRangeSums(allData: ViewsPoint[]) {
-    const sums: Record<string, number> = {};
-    for (const range of timeRanges) {
-      const since = getSinceDate(range.value);
-      if (!since) {
-        sums[range.value] = allData.reduce((s, p) => s + p.views, 0);
-      } else {
-        const sinceDate = since.slice(0, 10);
-        sums[range.value] = allData
-          .filter(p => p.date >= sinceDate)
-          .reduce((s, p) => s + p.views, 0);
-      }
-    }
-    return sums;
+  async function fetchRangeSums() {
+    const data = await api.getViewsRangeSums();
+    return data.sums;
   }
 
   function formatNum(n: number): string {
@@ -728,7 +717,7 @@
 
   async function loadAllViews() {
     allViewsData = await api.getViews();
-    rangeSums = computeRangeSums(allViewsData);
+    rangeSums = await fetchRangeSums();
   }
 
   async function loadViews() {
@@ -981,6 +970,10 @@
       <div class="stat">
         <span class="value">{analytics.total_subjects}</span>
         <span class="label">Subjects</span>
+      </div>
+      <div class="stat">
+        <span class="value">{formatNum(analytics.total_views)}</span>
+        <span class="label">Total Views</span>
       </div>
       <div class="sync-actions">
         {#if syncing}
