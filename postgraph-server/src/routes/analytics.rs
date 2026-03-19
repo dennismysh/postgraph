@@ -123,35 +123,10 @@ pub async fn get_views(
     State(state): State<AppState>,
     Query(query): Query<ViewsQuery>,
 ) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
-    // For hourly grouping, use snapshot deltas (Threads API only provides daily)
-    if query.grouping.as_deref() == Some("hourly") {
-        return get_views_from_snapshots(&state.pool, &query).await;
-    }
-
-    // For daily data, use Threads user-level insights API (authoritative source)
-    let until = chrono::Utc::now().timestamp();
-    let since = if let Some(ref since_str) = query.since {
-        chrono::DateTime::parse_from_rfc3339(since_str)
-            .map(|dt| dt.timestamp())
-            .unwrap_or(1712991600)
-    } else {
-        // Threads API earliest allowed: April 13, 2024
-        1712991600
-    };
-
-    match state.threads.get_user_views(since, until).await {
-        Ok(rows) => {
-            let points: Vec<ViewsPoint> = rows
-                .into_iter()
-                .map(|(date, views)| ViewsPoint { date, views })
-                .collect();
-            Ok(Json(points))
-        }
-        Err(e) => {
-            tracing::warn!("User insights API failed, falling back to snapshots: {e}");
-            get_views_from_snapshots(&state.pool, &query).await
-        }
-    }
+    // Use per-post snapshot deltas — the Threads user-level insights API
+    // undercounts views (~50% of what the Threads app reports), while
+    // summing per-post view deltas matches the app exactly.
+    get_views_from_snapshots(&state.pool, &query).await
 }
 
 /// Fallback: compute views from engagement snapshot deltas.
