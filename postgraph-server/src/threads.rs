@@ -61,24 +61,6 @@ pub struct InsightsResponse {
     pub data: Vec<InsightData>,
 }
 
-// User-level insights response types
-#[derive(Debug, Deserialize)]
-pub struct UserInsightValue {
-    pub value: i64,
-    pub end_time: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UserInsightData {
-    pub name: String,
-    pub values: Option<Vec<UserInsightValue>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UserInsightsResponse {
-    pub data: Vec<UserInsightData>,
-}
-
 #[derive(Debug, Default)]
 pub struct PostInsights {
     pub views: i32,
@@ -228,58 +210,5 @@ impl ThreadsClient {
         }
 
         Ok(insights)
-    }
-
-    /// Fetch user-level daily views from the Threads Insights API.
-    /// Returns daily view counts as (date_string, views) pairs.
-    pub async fn get_user_views(
-        &self,
-        since: i64,
-        until: i64,
-    ) -> Result<Vec<(String, i64)>, AppError> {
-        let url = format!(
-            "{}/me/threads_insights?metric=views&since={}&until={}&access_token={}",
-            BASE_URL,
-            since,
-            until,
-            self.token().await
-        );
-
-        let resp = self.client.get(&url).send().await?;
-        if resp.status() == 429 {
-            return Err(AppError::RateLimited(60));
-        }
-        if !resp.status().is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(AppError::ThreadsApi(format!(
-                "User insights failed: {body}"
-            )));
-        }
-
-        let data: UserInsightsResponse = resp.json().await?;
-        let mut result = Vec::new();
-
-        for item in &data.data {
-            if item.name == "views" {
-                if let Some(values) = &item.values {
-                    for v in values {
-                        if let Some(end_time) = &v.end_time {
-                            // Parse end_time like "2024-07-12T08:00:00+0000"
-                            let date = if let Ok(dt) =
-                                chrono::DateTime::parse_from_str(end_time, "%Y-%m-%dT%H:%M:%S%z")
-                            {
-                                dt.format("%Y-%m-%d").to_string()
-                            } else {
-                                // Fallback: take first 10 chars as date
-                                end_time.chars().take(10).collect()
-                            };
-                            result.push((date, v.value));
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(result)
     }
 }
