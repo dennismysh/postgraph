@@ -531,63 +531,78 @@ pub struct ViewsRangeSums {
 pub async fn get_views_range_sums(
     State(state): State<AppState>,
 ) -> Result<Json<ViewsRangeSums>, axum::http::StatusCode> {
-    let ranges: &[(&str, Option<i64>)] = &[
-        ("24h", Some(1)),
-        ("7d", Some(7)),
-        ("14d", Some(14)),
-        ("30d", Some(30)),
-        ("60d", Some(60)),
-        ("90d", Some(90)),
-        ("180d", Some(180)),
-        ("270d", Some(270)),
-        ("365d", Some(365)),
-        ("all", None),
-    ];
+    let now = chrono::Utc::now();
+    let b365 = now - chrono::Duration::days(365);
+    let b270 = now - chrono::Duration::days(270);
+    let b180 = now - chrono::Duration::days(180);
+    let b90 = now - chrono::Duration::days(90);
+    let b60 = now - chrono::Duration::days(60);
+    let b30 = now - chrono::Duration::days(30);
+    let b14 = now - chrono::Duration::days(14);
+    let b7 = now - chrono::Duration::days(7);
+    let b1 = now - chrono::Duration::days(1);
 
-    // Boundary-based approach using posts.views as the authoritative source.
-    // For posts created within the range: count all their views.
-    // For older posts: count views gained since the nearest snapshot before
-    // the boundary (current views minus that snapshot's views).
-    const RANGE_SQL: &str = r#"
-        SELECT COALESCE(SUM(
-            CASE
-                WHEN p.timestamp >= $1 THEN p.views
-                ELSE GREATEST(p.views - COALESCE(boundary.views, 0), 0)
-            END
-        ), 0)::bigint
-        FROM posts p
-        LEFT JOIN LATERAL (
-            SELECT es.views FROM engagement_snapshots es
-            WHERE es.post_id = p.id AND es.captured_at <= $1
-            ORDER BY es.captured_at DESC LIMIT 1
-        ) boundary ON TRUE
-    "#;
+    // Delta-based approach matching the chart query (get_views_from_snapshots).
+    // Computes snapshot-to-snapshot deltas, then sums them per range using
+    // conditional aggregation in a single pass.
+    //
+    // This is immune to migration 004's zero-backfill because deltas from a
+    // zero-valued snapshot are 0 (correct), not the post's full current views.
+    let row: (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"WITH ordered_snapshots AS (
+               SELECT es.captured_at,
+                      es.post_id,
+                      es.views,
+                      MAX(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_views,
+                      p.timestamp AS post_timestamp
+               FROM engagement_snapshots es
+               JOIN posts p ON p.id = es.post_id
+           ),
+           with_deltas AS (
+               SELECT CASE
+                          WHEN prev_views IS NULL OR prev_views = 0 THEN post_timestamp
+                          ELSE captured_at
+                      END AS effective_date,
+                      GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
+               FROM ordered_snapshots
+           )
+           SELECT
+               COALESCE(SUM(view_delta), 0)::bigint,
+               COALESCE(SUM(CASE WHEN effective_date >= $1 THEN view_delta END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN effective_date >= $2 THEN view_delta END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN effective_date >= $3 THEN view_delta END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN effective_date >= $4 THEN view_delta END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN effective_date >= $5 THEN view_delta END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN effective_date >= $6 THEN view_delta END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN effective_date >= $7 THEN view_delta END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN effective_date >= $8 THEN view_delta END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN effective_date >= $9 THEN view_delta END), 0)::bigint
+           FROM with_deltas"#,
+    )
+    .bind(b365)
+    .bind(b270)
+    .bind(b180)
+    .bind(b90)
+    .bind(b60)
+    .bind(b30)
+    .bind(b14)
+    .bind(b7)
+    .bind(b1)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut sums = HashMap::new();
-    let now = chrono::Utc::now();
-
-    for &(key, days) in ranges {
-        let total: i64 = match days {
-            None => {
-                let (t,): (i64,) =
-                    sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
-                        .fetch_one(&state.pool)
-                        .await
-                        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
-                t
-            }
-            Some(d) => {
-                let boundary = now - chrono::Duration::days(d);
-                let (t,): (i64,) = sqlx::query_as(RANGE_SQL)
-                    .bind(boundary)
-                    .fetch_one(&state.pool)
-                    .await
-                    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
-                t
-            }
-        };
-        sums.insert(key.to_string(), total);
-    }
+    sums.insert("all".to_string(), row.0);
+    sums.insert("365d".to_string(), row.1);
+    sums.insert("270d".to_string(), row.2);
+    sums.insert("180d".to_string(), row.3);
+    sums.insert("90d".to_string(), row.4);
+    sums.insert("60d".to_string(), row.5);
+    sums.insert("30d".to_string(), row.6);
+    sums.insert("14d".to_string(), row.7);
+    sums.insert("7d".to_string(), row.8);
+    sums.insert("24h".to_string(), row.9);
 
     Ok(Json(ViewsRangeSums { sums }))
 }
