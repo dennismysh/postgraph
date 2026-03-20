@@ -256,6 +256,7 @@ async fn main() {
         )
         .route("/api/sync", post(routes::sync::trigger_sync))
         .route("/api/sync/status", get(routes::sync::sync_status))
+        .route("/api/sync/reset", post(routes::sync::reset_database))
         .route("/api/reanalyze", post(routes::reanalyze::trigger_reanalyze))
         .route("/api/analyze", post(routes::analyze::start_analyze))
         .route("/api/analyze/status", get(routes::analyze::analyze_status))
