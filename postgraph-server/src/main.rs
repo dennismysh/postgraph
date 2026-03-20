@@ -235,6 +235,10 @@ async fn main() {
             get(routes::analytics::get_views_range_sums),
         )
         .route(
+            "/api/analytics/views/debug",
+            get(routes::analytics::get_views_debug),
+        )
+        .route(
             "/api/analytics/heatmap",
             get(routes::analytics::get_heatmap),
         )
