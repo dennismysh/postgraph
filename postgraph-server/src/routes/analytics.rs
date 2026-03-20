@@ -592,6 +592,20 @@ pub async fn get_views_range_sums(
     .await
     .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    tracing::info!(
+        all = row.0,
+        d365 = row.1,
+        d270 = row.2,
+        d180 = row.3,
+        d90 = row.4,
+        d60 = row.5,
+        d30 = row.6,
+        d14 = row.7,
+        d7 = row.8,
+        d24h = row.9,
+        "views range sums computed"
+    );
+
     let mut sums = HashMap::new();
     sums.insert("all".to_string(), row.0);
     sums.insert("365d".to_string(), row.1);
@@ -605,4 +619,102 @@ pub async fn get_views_range_sums(
     sums.insert("24h".to_string(), row.9);
 
     Ok(Json(ViewsRangeSums { sums }))
+}
+
+/// Diagnostic endpoint: reveals post timestamp distribution and snapshot data
+/// to help debug why range sums might all show the same value.
+pub async fn get_views_debug(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
+    // 1. Post timestamp distribution (count per year-month)
+    let ts_dist: Vec<(String, i64)> = sqlx::query_as(
+        r#"SELECT TO_CHAR(timestamp, 'YYYY-MM') AS month, COUNT(*)::bigint
+           FROM posts GROUP BY month ORDER BY month"#,
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // 2. Five oldest posts
+    let oldest: Vec<(String, String)> =
+        sqlx::query_as(r#"SELECT id, timestamp::text FROM posts ORDER BY timestamp LIMIT 5"#)
+            .fetch_all(&state.pool)
+            .await
+            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // 3. Snapshot stats
+    let (snap_count, snap_min, snap_max): (i64, Option<String>, Option<String>) = sqlx::query_as(
+        r#"SELECT COUNT(*)::bigint,
+                  MIN(captured_at)::text,
+                  MAX(captured_at)::text
+           FROM engagement_snapshots"#,
+    )
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // 4. Delta total vs posts.views total
+    let (delta_total,): (i64,) = sqlx::query_as(
+        r#"WITH ordered_snapshots AS (
+               SELECT es.views,
+                      MAX(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_views
+               FROM engagement_snapshots es
+           )
+           SELECT COALESCE(SUM(GREATEST(views - COALESCE(prev_views, 0), 0)), 0)::bigint
+           FROM ordered_snapshots"#,
+    )
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let (posts_total,): (i64,) =
+        sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // 5. Sample of effective_date distribution from the delta CTE
+    let eff_dist: Vec<(String, i64, i64)> = sqlx::query_as(
+        r#"WITH ordered_snapshots AS (
+               SELECT es.captured_at, es.post_id, es.views,
+                      MAX(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_views,
+                      p.timestamp AS post_timestamp
+               FROM engagement_snapshots es
+               JOIN posts p ON p.id = es.post_id
+           ),
+           with_deltas AS (
+               SELECT CASE
+                          WHEN prev_views IS NULL OR prev_views = 0 THEN post_timestamp
+                          ELSE captured_at
+                      END AS effective_date,
+                      GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
+               FROM ordered_snapshots
+           )
+           SELECT TO_CHAR(effective_date, 'YYYY-MM') AS month,
+                  COUNT(*)::bigint AS num_deltas,
+                  COALESCE(SUM(view_delta), 0)::bigint AS total_delta
+           FROM with_deltas
+           GROUP BY month
+           ORDER BY month"#,
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let result = serde_json::json!({
+        "post_timestamp_distribution": ts_dist.into_iter().map(|(m, c)| serde_json::json!({"month": m, "count": c})).collect::<Vec<_>>(),
+        "oldest_posts": oldest.into_iter().map(|(id, ts)| serde_json::json!({"id": id, "timestamp": ts})).collect::<Vec<_>>(),
+        "snapshot_stats": {
+            "count": snap_count,
+            "earliest": snap_min,
+            "latest": snap_max,
+        },
+        "totals": {
+            "delta_based": delta_total,
+            "posts_sum": posts_total,
+        },
+        "effective_date_distribution": eff_dist.into_iter().map(|(m, n, d)| serde_json::json!({"month": m, "num_deltas": n, "total_delta": d})).collect::<Vec<_>>(),
+    });
+
+    Ok(Json(result))
 }
