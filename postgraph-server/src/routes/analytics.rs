@@ -276,15 +276,21 @@ pub async fn get_analytics(
 
     let analyzed_count = posts.iter().filter(|p| p.analyzed_at.is_some()).count();
 
-    // posts.views holds the latest value from the Threads API for each post.
-    // Summing directly is the authoritative total — the delta-based approach
-    // from engagement_snapshots undercounts when posts lack post-migration
-    // snapshots (migration 004 backfilled views=0).
-    let (total_views,): (i64,) =
-        sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
-            .fetch_one(&state.pool)
-            .await
-            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Use the GREATER of two totals to guard against both API fluctuations
+    // (posts.views can decrease) and snapshot gaps (migration 004 zeroed history).
+    let (total_views,): (i64,) = sqlx::query_as(
+        r#"SELECT GREATEST(
+               (SELECT COALESCE(SUM(views), 0) FROM posts),
+               (SELECT COALESCE(SUM(GREATEST(views - COALESCE(prev_views, 0), 0)), 0)
+                FROM (SELECT views,
+                             MAX(views) OVER (PARTITION BY post_id ORDER BY captured_at
+                                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_views
+                      FROM engagement_snapshots) s)
+           )::bigint"#,
+    )
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(AnalyticsData {
         total_posts: posts.len(),
@@ -603,8 +609,15 @@ pub async fn get_views_range_sums(
         "views range sums computed"
     );
 
+    // Guard "all" against undercounting: use the greater of delta total and posts.views sum.
+    let (posts_sum,): (i64,) =
+        sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
     let mut sums = HashMap::new();
-    sums.insert("all".to_string(), row.0);
+    sums.insert("all".to_string(), row.0.max(posts_sum));
     sums.insert("365d".to_string(), row.1);
     sums.insert("270d".to_string(), row.2);
     sums.insert("180d".to_string(), row.3);

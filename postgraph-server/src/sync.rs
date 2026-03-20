@@ -36,7 +36,7 @@ pub async fn refresh_all_metrics(
             match client.get_post_insights(post_id).await {
                 Ok(insights) => {
                     sqlx::query(
-                        "UPDATE posts SET views = $1, likes = $2, replies_count = $3, reposts = $4, quotes = $5, shares = $6, synced_at = NOW() WHERE id = $7",
+                        "UPDATE posts SET views = GREATEST(views, $1), likes = GREATEST(likes, $2), replies_count = GREATEST(replies_count, $3), reposts = GREATEST(reposts, $4), quotes = GREATEST(quotes, $5), shares = GREATEST(shares, $6), synced_at = NOW() WHERE id = $7",
                     )
                     .bind(insights.views)
                     .bind(insights.likes)
@@ -192,7 +192,7 @@ pub async fn run_sync(
                 match client.get_post_insights(&tp.id).await {
                     Ok(insights) => {
                         sqlx::query(
-                            "UPDATE posts SET views = $1, likes = $2, replies_count = $3, reposts = $4, quotes = $5, shares = $6 WHERE id = $7",
+                            "UPDATE posts SET views = GREATEST(views, $1), likes = GREATEST(likes, $2), replies_count = GREATEST(replies_count, $3), reposts = GREATEST(reposts, $4), quotes = GREATEST(quotes, $5), shares = GREATEST(shares, $6) WHERE id = $7",
                         )
                         .bind(insights.views)
                         .bind(insights.likes)
