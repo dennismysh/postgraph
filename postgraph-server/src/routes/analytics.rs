@@ -276,22 +276,15 @@ pub async fn get_analytics(
 
     let analyzed_count = posts.iter().filter(|p| p.analyzed_at.is_some()).count();
 
-    // Use delta-based calculation from engagement snapshots to get accurate
-    // cumulative views. SUM(views) FROM posts only reflects the latest API
-    // snapshot, which can decrease when the API returns lower values. The
-    // delta approach captures all incremental gains.
-    let (total_views,): (i64,) = sqlx::query_as(
-        r#"WITH ordered_snapshots AS (
-               SELECT es.views,
-                      MAX(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_views
-               FROM engagement_snapshots es
-           )
-           SELECT COALESCE(SUM(GREATEST(views - COALESCE(prev_views, 0), 0)), 0)::bigint
-           FROM ordered_snapshots"#,
-    )
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    // posts.views holds the latest value from the Threads API for each post.
+    // Summing directly is the authoritative total — the delta-based approach
+    // from engagement_snapshots undercounts when posts lack post-migration
+    // snapshots (migration 004 backfilled views=0).
+    let (total_views,): (i64,) =
+        sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(AnalyticsData {
         total_posts: posts.len(),
@@ -551,44 +544,46 @@ pub async fn get_views_range_sums(
         ("all", None),
     ];
 
-    // Compute all view deltas once, then sum by range.
-    // This uses the same delta-based approach as the views chart, which
-    // captures all incremental gains and avoids undercounting when the API
-    // returns lower values for a post.
-    let all_deltas: Vec<(chrono::DateTime<chrono::Utc>, i64)> = sqlx::query_as(
-        r#"WITH ordered_snapshots AS (
-               SELECT es.captured_at,
-                      es.post_id,
-                      es.views,
-                      MAX(es.views) OVER (PARTITION BY es.post_id ORDER BY es.captured_at ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_views,
-                      p.timestamp AS post_timestamp
-               FROM engagement_snapshots es
-               JOIN posts p ON p.id = es.post_id
-           )
-           SELECT CASE
-                      WHEN prev_views IS NULL OR prev_views = 0 THEN post_timestamp
-                      ELSE captured_at
-                  END AS effective_date,
-                  GREATEST(views - COALESCE(prev_views, 0), 0)::bigint AS view_delta
-           FROM ordered_snapshots"#,
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Boundary-based approach using posts.views as the authoritative source.
+    // For posts created within the range: count all their views.
+    // For older posts: count views gained since the nearest snapshot before
+    // the boundary (current views minus that snapshot's views).
+    const RANGE_SQL: &str = r#"
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN p.timestamp >= $1 THEN p.views
+                ELSE GREATEST(p.views - COALESCE(boundary.views, 0), 0)
+            END
+        ), 0)::bigint
+        FROM posts p
+        LEFT JOIN LATERAL (
+            SELECT es.views FROM engagement_snapshots es
+            WHERE es.post_id = p.id AND es.captured_at <= $1
+            ORDER BY es.captured_at DESC LIMIT 1
+        ) boundary ON TRUE
+    "#;
 
     let mut sums = HashMap::new();
     let now = chrono::Utc::now();
 
     for &(key, days) in ranges {
         let total: i64 = match days {
-            None => all_deltas.iter().map(|(_, delta)| delta).sum(),
+            None => {
+                let (t,): (i64,) =
+                    sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
+                        .fetch_one(&state.pool)
+                        .await
+                        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                t
+            }
             Some(d) => {
                 let boundary = now - chrono::Duration::days(d);
-                all_deltas
-                    .iter()
-                    .filter(|(date, _)| *date >= boundary)
-                    .map(|(_, delta)| delta)
-                    .sum()
+                let (t,): (i64,) = sqlx::query_as(RANGE_SQL)
+                    .bind(boundary)
+                    .fetch_one(&state.pool)
+                    .await
+                    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                t
             }
         };
         sums.insert(key.to_string(), total);
