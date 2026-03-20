@@ -166,7 +166,7 @@ async fn get_views_from_snapshots(
            ),
            with_deltas AS (
                SELECT CASE
-                          WHEN prev_views IS NULL THEN post_timestamp
+                          WHEN prev_views IS NULL OR prev_views = 0 THEN post_timestamp
                           ELSE captured_at
                       END AS effective_date,
                       GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
@@ -566,7 +566,7 @@ pub async fn get_views_range_sums(
                JOIN posts p ON p.id = es.post_id
            )
            SELECT CASE
-                      WHEN prev_views IS NULL THEN post_timestamp
+                      WHEN prev_views IS NULL OR prev_views = 0 THEN post_timestamp
                       ELSE captured_at
                   END AS effective_date,
                   GREATEST(views - COALESCE(prev_views, 0), 0)::bigint AS view_delta
