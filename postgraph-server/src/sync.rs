@@ -94,6 +94,36 @@ pub async fn refresh_all_metrics(
     }
 
     info!("Metrics refresh complete: {updated}/{total} posts updated");
+
+    // Fetch user-level insights to get the authoritative total views.
+    // The per-post sum was corrupted by pre-GREATEST syncs; the user-level
+    // endpoint gives the same total the Threads app shows.
+    match client.get_user_insights(None).await {
+        Ok(user_insights) => {
+            let (post_sum,): (i64,) =
+                sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
+                    .fetch_one(pool)
+                    .await
+                    .unwrap_or((0,));
+            info!(
+                user_level = user_insights.total_views,
+                post_sum = post_sum,
+                gap = user_insights.total_views - post_sum,
+                ratio = format!(
+                    "{:.2}",
+                    user_insights.total_views as f64 / post_sum.max(1) as f64
+                ),
+                "User-level vs per-post views comparison"
+            );
+            if let Err(e) = db::update_user_insights(pool, user_insights.total_views).await {
+                warn!("Failed to store user insights: {e}");
+            }
+        }
+        Err(e) => {
+            warn!("Failed to fetch user-level insights: {e}");
+        }
+    }
+
     Ok(updated)
 }
 
