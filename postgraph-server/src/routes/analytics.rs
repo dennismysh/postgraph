@@ -124,10 +124,24 @@ pub async fn get_views(
     State(state): State<AppState>,
     Query(query): Query<ViewsQuery>,
 ) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
-    // Use per-post snapshot deltas — the Threads user-level insights API
-    // undercounts views (~50% of what the Threads app reports), while
-    // summing per-post view deltas matches the app exactly.
-    get_views_from_snapshots(&state.pool, &query).await
+    // Per-post snapshot deltas provide the time distribution.
+    // When user-level insights are available and exceed the delta total,
+    // we scale the chart proportionally so the sum matches the app total.
+    let mut points = get_views_from_snapshots(&state.pool, &query).await?;
+
+    let user_level = db::get_user_insights_total(&state.pool).await.unwrap_or(0);
+
+    if user_level > 0 {
+        let delta_total: i64 = points.iter().map(|p| p.views).sum();
+        if delta_total > 0 && user_level > delta_total {
+            let scale = user_level as f64 / delta_total as f64;
+            for point in points.iter_mut() {
+                point.views = (point.views as f64 * scale) as i64;
+            }
+        }
+    }
+
+    Ok(points)
 }
 
 /// Fallback: compute views from engagement snapshot deltas.
@@ -154,6 +168,10 @@ async fn get_views_from_snapshots(
         ("DATE(effective_date)", "DATE(effective_date)::text")
     };
 
+    // For the first snapshot of each post (prev_views IS NULL or prev_views = 0),
+    // spread the initial delta evenly across the days from post creation to capture.
+    // This prevents the chart from showing a huge spike on the first-sync date
+    // (March 13) when migration 004 backfilled old snapshots with views=0.
     let sql = format!(
         r#"WITH ordered_snapshots AS (
                SELECT es.captured_at,
@@ -164,22 +182,45 @@ async fn get_views_from_snapshots(
                FROM engagement_snapshots es
                JOIN posts p ON p.id = es.post_id
            ),
-           with_deltas AS (
-               SELECT CASE
-                          WHEN prev_views IS NULL THEN post_timestamp
-                          ELSE captured_at
-                      END AS effective_date,
+           first_snapshot_spread AS (
+               -- First snapshot (or zero-prev from migration 004): spread delta
+               -- evenly across days from post creation to snapshot capture.
+               SELECT gs.day::timestamptz AS effective_date,
+                      (GREATEST(os.views - COALESCE(os.prev_views, 0), 0)::float8
+                       / GREATEST(EXTRACT(DAY FROM os.captured_at - os.post_timestamp) + 1, 1))::bigint AS view_delta
+               FROM ordered_snapshots os,
+               LATERAL generate_series(
+                   os.post_timestamp::date,
+                   os.captured_at::date,
+                   '1 day'::interval
+               ) AS gs(day)
+               WHERE (os.prev_views IS NULL OR os.prev_views = 0)
+                 AND os.views > COALESCE(os.prev_views, 0)
+           ),
+           subsequent_deltas AS (
+               SELECT captured_at AS effective_date,
                       GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
                FROM ordered_snapshots
+               WHERE prev_views IS NOT NULL AND prev_views > 0
+           ),
+           all_deltas AS (
+               SELECT * FROM first_snapshot_spread
+               UNION ALL
+               SELECT * FROM subsequent_deltas
            )
            SELECT {date_format} AS date,
                   SUM(view_delta)::bigint AS total_views
-           FROM with_deltas
-           {since_clause}
+           FROM all_deltas
+           WHERE view_delta > 0
+           {since_clause_and}
            GROUP BY {date_expr}
            ORDER BY date"#,
-        date_format = date_format,
-        since_clause = since_clause,
+        date_format = date_format.replace("effective_date", "effective_date"),
+        since_clause_and = if since_clause.is_empty() {
+            String::new()
+        } else {
+            since_clause.replace("WHERE", "AND")
+        },
         date_expr = date_expr,
     );
 
@@ -276,9 +317,11 @@ pub async fn get_analytics(
 
     let analyzed_count = posts.iter().filter(|p| p.analyzed_at.is_some()).count();
 
-    // Use the GREATER of two totals to guard against both API fluctuations
-    // (posts.views can decrease) and snapshot gaps (migration 004 zeroed history).
-    let (total_views,): (i64,) = sqlx::query_as(
+    // Use the greatest of three sources for total views:
+    // 1. User-level insights from the Threads API (authoritative, matches the app)
+    // 2. SUM(posts.views) — protected by GREATEST going forward
+    // 3. Delta-based sum from engagement snapshots
+    let (post_and_delta_max,): (i64,) = sqlx::query_as(
         r#"SELECT GREATEST(
                (SELECT COALESCE(SUM(views), 0) FROM posts),
                (SELECT COALESCE(SUM(GREATEST(views - COALESCE(prev_views, 0), 0)), 0)
@@ -291,6 +334,9 @@ pub async fn get_analytics(
     .fetch_one(&state.pool)
     .await
     .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let user_level = db::get_user_insights_total(&state.pool).await.unwrap_or(0);
+    let total_views = post_and_delta_max.max(user_level);
 
     Ok(Json(AnalyticsData {
         total_posts: posts.len(),
@@ -548,9 +594,8 @@ pub async fn get_views_range_sums(
     let b7 = now - chrono::Duration::days(7);
     let b1 = now - chrono::Duration::days(1);
 
-    // Delta-based approach matching the chart query (get_views_from_snapshots).
-    // Computes snapshot-to-snapshot deltas, then sums them per range using
-    // conditional aggregation in a single pass.
+    // Delta-based approach with first-snapshot spreading (matching chart query).
+    // Spreads initial view deltas across post lifetimes to avoid attribution spikes.
     let row: (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
         r#"WITH ordered_snapshots AS (
                SELECT es.captured_at,
@@ -561,13 +606,29 @@ pub async fn get_views_range_sums(
                FROM engagement_snapshots es
                JOIN posts p ON p.id = es.post_id
            ),
-           with_deltas AS (
-               SELECT CASE
-                          WHEN prev_views IS NULL THEN post_timestamp
-                          ELSE captured_at
-                      END AS effective_date,
+           first_snapshot_spread AS (
+               SELECT gs.day::timestamptz AS effective_date,
+                      (GREATEST(os.views - COALESCE(os.prev_views, 0), 0)::float8
+                       / GREATEST(EXTRACT(DAY FROM os.captured_at - os.post_timestamp) + 1, 1))::bigint AS view_delta
+               FROM ordered_snapshots os,
+               LATERAL generate_series(
+                   os.post_timestamp::date,
+                   os.captured_at::date,
+                   '1 day'::interval
+               ) AS gs(day)
+               WHERE (os.prev_views IS NULL OR os.prev_views = 0)
+                 AND os.views > COALESCE(os.prev_views, 0)
+           ),
+           subsequent_deltas AS (
+               SELECT captured_at AS effective_date,
                       GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
                FROM ordered_snapshots
+               WHERE prev_views IS NOT NULL AND prev_views > 0
+           ),
+           all_deltas AS (
+               SELECT * FROM first_snapshot_spread
+               UNION ALL
+               SELECT * FROM subsequent_deltas
            )
            SELECT
                COALESCE(SUM(view_delta), 0)::bigint,
@@ -580,7 +641,8 @@ pub async fn get_views_range_sums(
                COALESCE(SUM(CASE WHEN effective_date >= $7 THEN view_delta END), 0)::bigint,
                COALESCE(SUM(CASE WHEN effective_date >= $8 THEN view_delta END), 0)::bigint,
                COALESCE(SUM(CASE WHEN effective_date >= $9 THEN view_delta END), 0)::bigint
-           FROM with_deltas"#,
+           FROM all_deltas
+           WHERE view_delta > 0"#,
     )
     .bind(b365)
     .bind(b270)
@@ -609,24 +671,48 @@ pub async fn get_views_range_sums(
         "views range sums computed"
     );
 
-    // Guard "all" against undercounting: use the greater of delta total and posts.views sum.
-    let (posts_sum,): (i64,) =
-        sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
-            .fetch_one(&state.pool)
-            .await
-            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Guard "all" against undercounting: use the greatest of delta total,
+    // posts.views sum, and user-level insights (authoritative).
+    let (posts_sum,): (i64,) = sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let user_level = db::get_user_insights_total(&state.pool).await.unwrap_or(0);
+
+    let delta_all = row.0;
+    let best_all = delta_all.max(posts_sum).max(user_level);
+
+    // Scale range sums proportionally when user-level total exceeds per-post sum.
+    // This distributes the "missing" views (from pre-GREATEST data corruption)
+    // proportionally across all time ranges.
+    let scale = if delta_all > 0 && best_all > delta_all {
+        best_all as f64 / delta_all as f64
+    } else {
+        1.0
+    };
 
     let mut sums = HashMap::new();
-    sums.insert("all".to_string(), row.0.max(posts_sum));
-    sums.insert("365d".to_string(), row.1);
-    sums.insert("270d".to_string(), row.2);
-    sums.insert("180d".to_string(), row.3);
-    sums.insert("90d".to_string(), row.4);
-    sums.insert("60d".to_string(), row.5);
-    sums.insert("30d".to_string(), row.6);
-    sums.insert("14d".to_string(), row.7);
-    sums.insert("7d".to_string(), row.8);
-    sums.insert("24h".to_string(), row.9);
+    sums.insert("all".to_string(), best_all);
+    sums.insert("365d".to_string(), (row.1 as f64 * scale) as i64);
+    sums.insert("270d".to_string(), (row.2 as f64 * scale) as i64);
+    sums.insert("180d".to_string(), (row.3 as f64 * scale) as i64);
+    sums.insert("90d".to_string(), (row.4 as f64 * scale) as i64);
+    sums.insert("60d".to_string(), (row.5 as f64 * scale) as i64);
+    sums.insert("30d".to_string(), (row.6 as f64 * scale) as i64);
+    sums.insert("14d".to_string(), (row.7 as f64 * scale) as i64);
+    sums.insert("7d".to_string(), (row.8 as f64 * scale) as i64);
+    sums.insert("24h".to_string(), (row.9 as f64 * scale) as i64);
+
+    if scale > 1.01 {
+        tracing::info!(
+            scale = format!("{:.2}", scale),
+            user_level,
+            delta_all,
+            posts_sum,
+            "Scaling range sums to match user-level total"
+        );
+    }
 
     Ok(Json(ViewsRangeSums { sums }))
 }
@@ -711,6 +797,30 @@ pub async fn get_views_debug(
     .await
     .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // 6. User-level insights (authoritative total from Threads API)
+    let user_level = db::get_user_insights_total(&state.pool).await.unwrap_or(0);
+
+    // 7. Top 10 posts by views
+    let top_posts: Vec<(String, i32, Option<String>)> = sqlx::query_as(
+        r#"SELECT id, views, LEFT(text, 60) AS preview FROM posts ORDER BY views DESC LIMIT 10"#,
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // 8. Posts with zero views
+    let (zero_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*)::bigint FROM posts WHERE views = 0")
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let scale = if delta_total > 0 && user_level > delta_total {
+        user_level as f64 / delta_total as f64
+    } else {
+        1.0
+    };
+
     let result = serde_json::json!({
         "post_timestamp_distribution": ts_dist.into_iter().map(|(m, c)| serde_json::json!({"month": m, "count": c})).collect::<Vec<_>>(),
         "oldest_posts": oldest.into_iter().map(|(id, ts)| serde_json::json!({"id": id, "timestamp": ts})).collect::<Vec<_>>(),
@@ -722,7 +832,13 @@ pub async fn get_views_debug(
         "totals": {
             "delta_based": delta_total,
             "posts_sum": posts_total,
+            "user_level_insights": user_level,
+            "scaling_factor": format!("{:.2}", scale),
+            "gap": user_level - posts_total,
+            "gap_pct": format!("{:.1}%", if posts_total > 0 { (user_level - posts_total) as f64 / posts_total as f64 * 100.0 } else { 0.0 }),
         },
+        "zero_views_posts": zero_count,
+        "top_posts": top_posts.into_iter().map(|(id, views, preview)| serde_json::json!({"id": id, "views": views, "preview": preview})).collect::<Vec<_>>(),
         "effective_date_distribution": eff_dist.into_iter().map(|(m, n, d)| serde_json::json!({"month": m, "num_deltas": n, "total_delta": d})).collect::<Vec<_>>(),
     });
 

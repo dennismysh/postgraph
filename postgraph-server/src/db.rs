@@ -471,6 +471,26 @@ pub async fn get_all_subject_edges(pool: &PgPool) -> sqlx::Result<Vec<SubjectEdg
         .await
 }
 
+// -- User Insights --
+
+pub async fn get_user_insights_total(pool: &PgPool) -> sqlx::Result<i64> {
+    let row: (i64,) =
+        sqlx::query_as("SELECT COALESCE(total_views, 0) FROM user_insights WHERE id = 1")
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0)
+}
+
+pub async fn update_user_insights(pool: &PgPool, total_views: i64) -> sqlx::Result<()> {
+    sqlx::query(
+        "UPDATE user_insights SET total_views = GREATEST(total_views, $1), captured_at = NOW() WHERE id = 1",
+    )
+    .bind(total_views)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn get_posts_by_subject(
     pool: &PgPool,
     subject_id: uuid::Uuid,
