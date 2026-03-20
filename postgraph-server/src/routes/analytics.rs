@@ -124,23 +124,7 @@ pub async fn get_views(
     State(state): State<AppState>,
     Query(query): Query<ViewsQuery>,
 ) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
-    // Per-post snapshot deltas provide the time distribution.
-    // When user-level insights are available and exceed the delta total,
-    // we scale the chart proportionally so the sum matches the app total.
-    let mut points = get_views_from_snapshots(&state.pool, &query).await?;
-
-    let user_level = db::get_user_insights_total(&state.pool).await.unwrap_or(0);
-
-    if user_level > 0 {
-        let delta_total: i64 = points.iter().map(|p| p.views).sum();
-        if delta_total > 0 && user_level > delta_total {
-            let scale = user_level as f64 / delta_total as f64;
-            for point in points.iter_mut() {
-                point.views = (point.views as f64 * scale) as i64;
-            }
-        }
-    }
-
+    let points = get_views_from_snapshots(&state.pool, &query).await?;
     Ok(points)
 }
 
@@ -671,7 +655,7 @@ pub async fn get_views_range_sums(
         "views range sums computed"
     );
 
-    // Guard "all" against undercounting: use the greatest of delta total,
+    // For the "all" bucket, use the greatest of delta total,
     // posts.views sum, and user-level insights (authoritative).
     let (posts_sum,): (i64,) = sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM posts")
         .fetch_one(&state.pool)
@@ -683,36 +667,17 @@ pub async fn get_views_range_sums(
     let delta_all = row.0;
     let best_all = delta_all.max(posts_sum).max(user_level);
 
-    // Scale range sums proportionally when user-level total exceeds per-post sum.
-    // This distributes the "missing" views (from pre-GREATEST data corruption)
-    // proportionally across all time ranges.
-    let scale = if delta_all > 0 && best_all > delta_all {
-        best_all as f64 / delta_all as f64
-    } else {
-        1.0
-    };
-
     let mut sums = HashMap::new();
     sums.insert("all".to_string(), best_all);
-    sums.insert("365d".to_string(), (row.1 as f64 * scale) as i64);
-    sums.insert("270d".to_string(), (row.2 as f64 * scale) as i64);
-    sums.insert("180d".to_string(), (row.3 as f64 * scale) as i64);
-    sums.insert("90d".to_string(), (row.4 as f64 * scale) as i64);
-    sums.insert("60d".to_string(), (row.5 as f64 * scale) as i64);
-    sums.insert("30d".to_string(), (row.6 as f64 * scale) as i64);
-    sums.insert("14d".to_string(), (row.7 as f64 * scale) as i64);
-    sums.insert("7d".to_string(), (row.8 as f64 * scale) as i64);
-    sums.insert("24h".to_string(), (row.9 as f64 * scale) as i64);
-
-    if scale > 1.01 {
-        tracing::info!(
-            scale = format!("{:.2}", scale),
-            user_level,
-            delta_all,
-            posts_sum,
-            "Scaling range sums to match user-level total"
-        );
-    }
+    sums.insert("365d".to_string(), row.1);
+    sums.insert("270d".to_string(), row.2);
+    sums.insert("180d".to_string(), row.3);
+    sums.insert("90d".to_string(), row.4);
+    sums.insert("60d".to_string(), row.5);
+    sums.insert("30d".to_string(), row.6);
+    sums.insert("14d".to_string(), row.7);
+    sums.insert("7d".to_string(), row.8);
+    sums.insert("24h".to_string(), row.9);
 
     Ok(Json(ViewsRangeSums { sums }))
 }

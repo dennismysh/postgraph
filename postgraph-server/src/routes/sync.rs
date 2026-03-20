@@ -94,3 +94,62 @@ pub async fn sync_status(State(state): State<AppState>) -> Json<SyncStatus> {
         total: state.sync_total.load(Ordering::SeqCst),
     })
 }
+
+#[derive(Serialize)]
+pub struct ResetResult {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Wipe all data (posts, snapshots, analysis, graph) and reset sync cursor
+/// so the next sync re-fetches everything from the Threads API.
+pub async fn reset_database(
+    State(state): State<AppState>,
+) -> Result<Json<ResetResult>, axum::http::StatusCode> {
+    if state.sync_running.load(Ordering::SeqCst) {
+        return Ok(Json(ResetResult {
+            success: false,
+            message: "Cannot reset while sync is running".to_string(),
+        }));
+    }
+
+    info!("Database reset requested — wiping all data");
+
+    // Truncate in dependency order (children before parents)
+    let tables = [
+        "engagement_snapshots",
+        "post_edges",
+        "subject_edges",
+        "post_topics",
+        "topics",
+        "categories",
+        "posts",
+        "intents",
+        "subjects",
+    ];
+    for table in tables {
+        sqlx::query(&format!("TRUNCATE {table} CASCADE"))
+            .execute(&state.pool)
+            .await
+            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    // Reset sync cursor so next sync fetches everything
+    sqlx::query("UPDATE sync_state SET last_sync_cursor = NULL, last_sync_at = NULL")
+        .execute(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Reset user insights
+    sqlx::query("UPDATE user_insights SET total_views = 0, captured_at = NOW()")
+        .execute(&state.pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    info!("Database reset complete");
+
+    Ok(Json(ResetResult {
+        success: true,
+        message: "Database reset. Trigger a sync to re-fetch all data.".to_string(),
+    }))
+}
