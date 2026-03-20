@@ -166,7 +166,7 @@ async fn get_views_from_snapshots(
            ),
            with_deltas AS (
                SELECT CASE
-                          WHEN prev_views IS NULL OR prev_views = 0 THEN post_timestamp
+                          WHEN prev_views IS NULL THEN post_timestamp
                           ELSE captured_at
                       END AS effective_date,
                       GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
@@ -545,9 +545,6 @@ pub async fn get_views_range_sums(
     // Delta-based approach matching the chart query (get_views_from_snapshots).
     // Computes snapshot-to-snapshot deltas, then sums them per range using
     // conditional aggregation in a single pass.
-    //
-    // This is immune to migration 004's zero-backfill because deltas from a
-    // zero-valued snapshot are 0 (correct), not the post's full current views.
     let row: (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
         r#"WITH ordered_snapshots AS (
                SELECT es.captured_at,
@@ -560,7 +557,7 @@ pub async fn get_views_range_sums(
            ),
            with_deltas AS (
                SELECT CASE
-                          WHEN prev_views IS NULL OR prev_views = 0 THEN post_timestamp
+                          WHEN prev_views IS NULL THEN post_timestamp
                           ELSE captured_at
                       END AS effective_date,
                       GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
@@ -684,7 +681,7 @@ pub async fn get_views_debug(
            ),
            with_deltas AS (
                SELECT CASE
-                          WHEN prev_views IS NULL OR prev_views = 0 THEN post_timestamp
+                          WHEN prev_views IS NULL THEN post_timestamp
                           ELSE captured_at
                       END AS effective_date,
                       GREATEST(views - COALESCE(prev_views, 0), 0) AS view_delta
