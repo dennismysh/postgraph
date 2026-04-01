@@ -86,10 +86,17 @@ async fn main() {
         sync_total: Arc::new(AtomicU32::new(0)),
     };
 
-    // Spawn background sync task (first run after 30s delay, then every 15 min)
+    // Spawn background sync task (first run after 30s, then every 15 min)
     let bg_state = state.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
+
+        // On startup: backfill daily_views if empty
+        info!("Checking daily_views backfill...");
+        if let Err(e) = sync::sync_daily_views(&bg_state.pool, &bg_state.threads).await {
+            tracing::error!("Startup daily views backfill failed: {e}");
+        }
+
         let mut interval = tokio::time::interval(Duration::from_secs(15 * 60));
         loop {
             interval.tick().await;
@@ -121,16 +128,19 @@ async fn main() {
                 }
             }
 
+            // Task 1: Discover posts
             info!("Background sync starting");
-            if let Err(e) = sync::run_sync(&bg_state.pool, &bg_state.threads, None).await {
-                tracing::error!("Background sync failed: {e}");
+            if let Err(e) = sync::sync_posts(&bg_state.pool, &bg_state.threads, None).await {
+                tracing::error!("Background post discovery failed: {e}");
                 continue;
             }
-            // Refresh metrics for all existing posts so views/likes stay current
-            if let Err(e) = sync::refresh_all_metrics(&bg_state.pool, &bg_state.threads, None).await
+            // Task 2: Refresh per-post metrics
+            if let Err(e) =
+                sync::sync_post_metrics(&bg_state.pool, &bg_state.threads, None).await
             {
                 tracing::error!("Background metrics refresh failed: {e}");
             }
+            // Analysis + edge computation
             let mut consecutive_failures = 0;
             loop {
                 match analysis::run_analysis(&bg_state.pool, &bg_state.mercury).await {
@@ -159,7 +169,7 @@ async fn main() {
         }
     });
 
-    // Spawn nightly sync task at 2am in user's timezone
+    // Spawn nightly sync task at 2am — handles daily_views collection
     let timezone_str = std::env::var("TIMEZONE").unwrap_or_else(|_| "UTC".to_string());
     let tz: chrono_tz::Tz = timezone_str.parse().unwrap_or_else(|_| {
         tracing::warn!("Invalid TIMEZONE '{timezone_str}', defaulting to UTC");
@@ -176,16 +186,27 @@ async fn main() {
             tokio::time::sleep(sleep_dur).await;
 
             info!("Nightly sync starting");
-            if let Err(e) = sync::run_sync(&nightly_state.pool, &nightly_state.threads, None).await
+
+            // Discover + refresh metrics
+            if let Err(e) =
+                sync::sync_posts(&nightly_state.pool, &nightly_state.threads, None).await
             {
-                tracing::error!("Nightly sync failed: {e}");
+                tracing::error!("Nightly post discovery failed: {e}");
             }
             if let Err(e) =
-                sync::refresh_all_metrics(&nightly_state.pool, &nightly_state.threads, None).await
+                sync::sync_post_metrics(&nightly_state.pool, &nightly_state.threads, None).await
             {
                 tracing::error!("Nightly metrics refresh failed: {e}");
             }
-            // Run analysis + edge computation for any new posts
+
+            // Daily views collection (the primary reason for nightly sync)
+            if let Err(e) =
+                sync::sync_daily_views(&nightly_state.pool, &nightly_state.threads).await
+            {
+                tracing::error!("Nightly daily views sync failed: {e}");
+            }
+
+            // Analysis + edge computation
             let mut consecutive_failures = 0;
             loop {
                 match analysis::run_analysis(&nightly_state.pool, &nightly_state.mercury).await {
@@ -235,12 +256,16 @@ async fn main() {
             get(routes::analytics::get_views_range_sums),
         )
         .route(
-            "/api/analytics/views/debug",
-            get(routes::analytics::get_views_debug),
+            "/api/analytics/views/cumulative",
+            get(routes::analytics::get_views_cumulative),
         )
         .route(
             "/api/analytics/heatmap",
             get(routes::analytics::get_heatmap),
+        )
+        .route(
+            "/api/analytics/heatmap/views",
+            get(routes::analytics::get_views_heatmap),
         )
         .route(
             "/api/analytics/engagement",

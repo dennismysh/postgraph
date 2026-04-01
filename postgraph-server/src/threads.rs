@@ -273,10 +273,10 @@ impl ThreadsClient {
                         if count == 0 {
                             continue;
                         }
-                        if let Some(ref end_time) = v.end_time {
-                            if let Some(date) = parse_end_time(end_time) {
-                                result.push((date, count));
-                            }
+                        if let Some(ref end_time) = v.end_time
+                            && let Some(date) = parse_end_time(end_time)
+                        {
+                            result.push((date, count));
                         }
                     }
                 }
