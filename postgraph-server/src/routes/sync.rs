@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 use tracing::info;
 
 use crate::state::AppState;
-use crate::sync::{refresh_all_metrics, run_sync};
+use crate::sync;
 
 #[derive(Serialize)]
 pub struct SyncStartResult {
@@ -43,35 +43,50 @@ pub async fn trigger_sync(State(state): State<AppState>) -> Json<SyncStartResult
         let mut status_parts: Vec<String> = Vec::new();
         let progress = Some((&bg.sync_progress, &bg.sync_total));
 
-        // Phase 1: sync posts
+        // Phase 1: discover posts
         {
-            *bg.sync_message.write().await = "Syncing posts from Threads...".to_string();
+            *bg.sync_message.write().await = "Discovering posts from Threads...".to_string();
         }
-        match run_sync(&bg.pool, &bg.threads, progress).await {
+        match sync::sync_posts(&bg.pool, &bg.threads, progress).await {
             Ok(n) => {
-                status_parts.push(format!("{n} synced"));
-                info!("Sync complete: {n} posts synced");
+                status_parts.push(format!("{n} discovered"));
+                info!("Post discovery complete: {n} posts");
             }
             Err(e) => {
-                tracing::error!("Sync failed: {e}");
+                tracing::error!("Post discovery failed: {e}");
                 *bg.sync_message.write().await = format!("Sync failed: {e}");
                 bg.sync_running.store(false, Ordering::SeqCst);
                 return;
             }
         }
 
-        // Phase 2: refresh metrics
+        // Phase 2: refresh per-post metrics
         {
-            *bg.sync_message.write().await = "Refreshing metrics...".to_string();
+            *bg.sync_message.write().await = "Refreshing per-post metrics...".to_string();
         }
-        match refresh_all_metrics(&bg.pool, &bg.threads, progress).await {
+        match sync::sync_post_metrics(&bg.pool, &bg.threads, progress).await {
             Ok(n) => {
-                status_parts.push(format!("{n} refreshed"));
-                info!("Metrics refresh complete: {n} posts refreshed");
+                status_parts.push(format!("{n} metrics refreshed"));
+                info!("Metrics refresh complete: {n} posts");
             }
             Err(e) => {
                 tracing::error!("Metrics refresh failed: {e}");
                 status_parts.push(format!("metrics failed: {e}"));
+            }
+        }
+
+        // Phase 3: sync daily views
+        {
+            *bg.sync_message.write().await = "Syncing daily views...".to_string();
+        }
+        match sync::sync_daily_views(&bg.pool, &bg.threads).await {
+            Ok(n) => {
+                status_parts.push(format!("{n} days synced"));
+                info!("Daily views sync complete: {n} days");
+            }
+            Err(e) => {
+                tracing::error!("Daily views sync failed: {e}");
+                status_parts.push(format!("daily views failed: {e}"));
             }
         }
 
@@ -140,8 +155,8 @@ pub async fn reset_database(
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Reset user insights
-    sqlx::query("UPDATE user_insights SET total_views = 0, captured_at = NOW()")
+    // Clear daily views
+    sqlx::query("TRUNCATE daily_views")
         .execute(&state.pool)
         .await
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
