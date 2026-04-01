@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
   import Heatmap from './Heatmap.svelte';
-  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type EngagementPoint, type Post, type SyncStatus, type PostEngagementPoint, type HeatmapDay, type HistogramBucket } from '$lib/api';
+  import { api, type AnalyticsData, type AnalyzeStatus, type ViewsPoint, type CumulativeViewsPoint, type EngagementPoint, type Post, type SyncStatus, type PostEngagementPoint, type HeatmapDay, type HistogramBucket } from '$lib/api';
 
   let analytics: AnalyticsData | null = $state(null);
   let topicsCanvas: HTMLCanvasElement = $state(null!);
@@ -45,6 +45,10 @@
   let postsHeatmapRange = $state('1y');
   let engagementHeatmapRange = $state('1y');
   let viewsHeatmapRange = $state('1y');
+
+  // Cumulative views chart state
+  let cumulativeCanvas: HTMLCanvasElement = $state(null!);
+  let cumulativeChart: Chart | null = $state(null);
 
   // Heartbeat chart state
   let heartbeatCanvas: HTMLCanvasElement = $state(null!);
@@ -306,7 +310,8 @@
   }
 
   async function loadViewsHeatmap() {
-    viewsHeatmapData = await loadHeatmap(viewsHeatmapRange);
+    const resp = await api.getViewsHeatmap(viewsHeatmapRange);
+    viewsHeatmapData = resp.days;
   }
 
   function postsTooltip(day: HeatmapDay): string {
@@ -715,6 +720,78 @@
     });
   }
 
+  async function renderCumulativeChart() {
+    if (cumulativeChart) cumulativeChart.destroy();
+    if (!cumulativeCanvas) return;
+    const since = getSinceDate(selectedRange);
+    const data: CumulativeViewsPoint[] = await api.getViewsCumulative(since);
+    if (data.length === 0) return;
+
+    const labels = data.map(p => {
+      const d = new Date(p.date + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+
+    const color = '#a855f7';
+    cumulativeChart = new Chart(cumulativeCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Cumulative Views',
+          data: data.map(p => p.cumulative_views),
+          borderColor: color,
+          backgroundColor: (ctx: { chart: Chart }) => {
+            const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
+            gradient.addColorStop(0, color + '40');
+            gradient.addColorStop(1, color + '00');
+            return gradient;
+          },
+          fill: true,
+          cubicInterpolationMode: 'monotone' as const,
+          borderWidth: 2.5,
+          pointRadius: data.length > 60 ? 0 : 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: color,
+          pointBorderColor: '#111',
+          pointBorderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' as const },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1a1a1a',
+            borderColor: '#333',
+            borderWidth: 1,
+            titleColor: '#ccc',
+            bodyColor: color,
+            padding: 10,
+            displayColors: false,
+            callbacks: {
+              label: (ctx: { parsed: { y: number | null } }) =>
+                `${(ctx.parsed.y ?? 0).toLocaleString()} total views`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#666', maxRotation: 45, maxTicksLimit: 12, font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,0.04)' },
+          },
+          y: {
+            ticks: { color: '#666', font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,0.06)' },
+            beginAtZero: false,
+          },
+        },
+      },
+    });
+  }
+
   async function loadAllViews() {
     allViewsData = await api.getViews();
     rangeSums = await fetchRangeSums();
@@ -737,6 +814,7 @@
     }
     await tick();
     renderViewsChart();
+    renderCumulativeChart();
   }
 
   function renderViewsChart() {
@@ -916,6 +994,7 @@
     // Views over time – load all data once, compute per-range sums client-side
     await loadAllViews();
     await loadViews();
+    renderCumulativeChart();
 
     // Engagement charts – load all data once, render 3 independent charts
     await loadAllEngagement();
@@ -1037,6 +1116,26 @@
       </div>
       <div class="chart-container">
         <canvas bind:this={viewsCanvas}></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card views-card">
+      <div class="chart-header">
+        <div class="chart-title-row">
+          <h3>Cumulative Views</h3>
+        </div>
+        <div class="time-filters">
+          {#each timeRanges as range}
+            <button
+              class="filter-btn"
+              class:active={selectedRange === range.value}
+              onclick={() => { selectedRange = range.value; loadViews(); }}
+            >{range.label}</button>
+          {/each}
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas bind:this={cumulativeCanvas}></canvas>
       </div>
     </div>
 
