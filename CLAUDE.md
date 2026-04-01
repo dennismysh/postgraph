@@ -93,3 +93,29 @@ Migrations in `postgraph-server/migrations/`. Run automatically on startup via `
 - ndl reference project: github.com/pgray/ndl (Threads API patterns)
 - Threads API base: `https://graph.threads.net/v1.0/`
 - Mercury API: OpenAI-compatible at configured endpoint
+
+
+<!-- VAULT-KNOWLEDGE-START -->
+## Vault Knowledge
+<!-- Auto-generated from Obsidian vault. Do not edit manually. -->
+<!-- Project: Postgraph -->
+
+### Rules
+- **Triple Reinforcement for Critical Workflows**
+
+### Patterns
+- **Comrak HTML Post-Processing Pattern**: Parse markdown with comrak in Rust, return HTML to frontend, then post-process the DOM with JS libraries (KaTeX, Mermaid, Shiki) for rich rendering.
+- **WFF Alpha-Gated Groups for Conditional Rendering**: Use alpha-gated Groups to conditionally render WFF element variants by config value.
+- **Multi-Level Discipline Enforcement**: Enforce critical workflows at three layers: docs, skill/protocol, and automation hook.
+
+### Project-Specific Knowledge (Postgraph)
+- **Postgraph Sync Architecture: Two-Layer Approach** (insight)
+- **Timezone-Aware Nightly Sync with chrono-tz** [minor] (lesson)
+- **Threads API REPOST_FACADE Media Type** [major] (lesson)
+
+### Critical Items (Other Projects)
+- **Kotlin import Reserved Keyword as Package Name** (Android-Launcher)
+- **VLOOKUP FALSE Argument Handling** (Spreadsheet-App)
+- **TRUE/FALSE Bare Identifiers Parsing** (Spreadsheet-App)
+
+<!-- VAULT-KNOWLEDGE-END -->

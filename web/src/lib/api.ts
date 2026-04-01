@@ -140,6 +140,11 @@ export interface ViewsPoint {
   views: number;
 }
 
+export interface CumulativeViewsPoint {
+  date: string;
+  cumulative_views: number;
+}
+
 export interface ViewsRangeSums {
   sums: Record<string, number>;
 }
@@ -266,4 +271,16 @@ export const api = {
     return fetchApi<HeatmapResponse>(`/api/analytics/heatmap${qs ? `?${qs}` : ''}`);
   },
   getViewsRangeSums: () => fetchApi<ViewsRangeSums>('/api/analytics/views/range-sums'),
+  getViewsCumulative: (since?: string): Promise<CumulativeViewsPoint[]> => {
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    const qs = params.toString();
+    return fetchApi(`/api/analytics/views/cumulative${qs ? `?${qs}` : ''}`);
+  },
+  getViewsHeatmap: (range?: string): Promise<HeatmapResponse> => {
+    const params = new URLSearchParams();
+    if (range) params.set('range', range);
+    const qs = params.toString();
+    return fetchApi(`/api/analytics/heatmap/views${qs ? `?${qs}` : ''}`);
+  },
 };

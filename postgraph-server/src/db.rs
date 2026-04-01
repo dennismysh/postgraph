@@ -471,24 +471,41 @@ pub async fn get_all_subject_edges(pool: &PgPool) -> sqlx::Result<Vec<SubjectEdg
         .await
 }
 
-// -- User Insights --
+// -- Daily Views --
 
-pub async fn get_user_insights_total(pool: &PgPool) -> sqlx::Result<i64> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COALESCE(total_views, 0) FROM user_insights WHERE id = 1")
-            .fetch_one(pool)
-            .await?;
-    Ok(row.0)
-}
-
-pub async fn update_user_insights(pool: &PgPool, total_views: i64) -> sqlx::Result<()> {
+/// Upsert a daily views entry. If the date already exists, update the views count.
+pub async fn upsert_daily_views(
+    pool: &PgPool,
+    date: chrono::NaiveDate,
+    views: i64,
+) -> sqlx::Result<()> {
     sqlx::query(
-        "UPDATE user_insights SET total_views = GREATEST(total_views, $1), captured_at = NOW() WHERE id = 1",
+        r#"INSERT INTO daily_views (date, views, fetched_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (date) DO UPDATE SET views = $2, fetched_at = NOW()"#,
     )
-    .bind(total_views)
+    .bind(date)
+    .bind(views)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Get the most recent date in daily_views, or None if table is empty.
+pub async fn get_max_daily_views_date(pool: &PgPool) -> sqlx::Result<Option<chrono::NaiveDate>> {
+    let row: (Option<chrono::NaiveDate>,) = sqlx::query_as("SELECT MAX(date) FROM daily_views")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
+/// Get the total views from daily_views table.
+pub async fn get_daily_views_total(pool: &PgPool) -> sqlx::Result<i64> {
+    let (total,): (i64,) =
+        sqlx::query_as("SELECT COALESCE(SUM(views), 0)::bigint FROM daily_views")
+            .fetch_one(pool)
+            .await?;
+    Ok(total)
 }
 
 pub async fn get_posts_by_subject(

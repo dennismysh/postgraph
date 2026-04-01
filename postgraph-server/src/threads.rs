@@ -1,10 +1,23 @@
 use crate::error::AppError;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use reqwest::Client;
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
 const BASE_URL: &str = "https://graph.threads.net/v1.0";
+
+/// Parse Threads API end_time string (e.g. "2024-07-12T08:00:00+0000") into a NaiveDate.
+/// The end_time marks the end of the day period, so we subtract one day to get the actual date.
+fn parse_end_time(s: &str) -> Option<chrono::NaiveDate> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some((dt - chrono::Duration::days(1)).date_naive());
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%z") {
+        return Some((dt - chrono::Duration::days(1)).date_naive());
+    }
+    tracing::warn!("Failed to parse end_time: {s:?}");
+    None
+}
 
 pub struct ThreadsClient {
     client: Client,
@@ -47,6 +60,7 @@ pub struct ThreadsListResponse {
 #[derive(Debug, Deserialize)]
 pub struct InsightValue {
     pub value: Option<serde_json::Value>,
+    pub end_time: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,20 +84,6 @@ pub struct PostInsights {
     pub reposts: i32,
     pub quotes: i32,
     pub shares: i32,
-}
-
-/// Daily view count from the user-level insights endpoint.
-#[derive(Debug)]
-pub struct UserDailyViews {
-    pub date: DateTime<Utc>,
-    pub views: i64,
-}
-
-/// Aggregated user-level insights covering multiple 90-day windows.
-#[derive(Debug, Default)]
-pub struct UserInsights {
-    pub total_views: i64,
-    pub daily: Vec<UserDailyViews>,
 }
 
 impl ThreadsClient {
@@ -227,16 +227,18 @@ impl ThreadsClient {
         Ok(insights)
     }
 
-    /// Fetch user-level insights (views) from the Threads API.
-    /// The API limits queries to 90-day windows, so we paginate backwards
-    /// to collect up to `max_days` of history (default 730 = ~2 years).
-    pub async fn get_user_insights(&self, max_days: Option<u32>) -> Result<UserInsights, AppError> {
+    /// Fetch user-level daily views from the Threads API.
+    /// Returns (date, views) pairs parsed from the API's end_time field.
+    /// Walks backwards in 90-day windows up to `max_days` (default 730).
+    pub async fn get_user_insights(
+        &self,
+        max_days: Option<u32>,
+    ) -> Result<Vec<(chrono::NaiveDate, i64)>, AppError> {
         let max_days = max_days.unwrap_or(730) as i64;
-        let mut result = UserInsights::default();
+        let mut result: Vec<(chrono::NaiveDate, i64)> = Vec::new();
         let now = Utc::now();
         let earliest = now - chrono::Duration::days(max_days);
 
-        // Walk backwards in 90-day windows
         let mut window_end = now;
         while window_end > earliest {
             let window_start = (window_end - chrono::Duration::days(89)).max(earliest);
@@ -269,30 +271,19 @@ impl ThreadsClient {
                 if let Some(values) = &item.values {
                     for v in values {
                         let count = v.value.as_ref().and_then(|val| val.as_i64()).unwrap_or(0);
-                        // end_time marks the end of the period
-                        // We don't have end_time in InsightValue, so attribute to window
-                        result.total_views += count;
-                        result.daily.push(UserDailyViews {
-                            date: window_start.with_timezone(&Utc),
-                            views: count,
-                        });
-                    }
-                }
-                if let Some(tv) = &item.total_value {
-                    let count = tv
-                        .as_i64()
-                        .or_else(|| tv.get("value").and_then(|v| v.as_i64()))
-                        .unwrap_or(0);
-                    if result.daily.is_empty() {
-                        // total_value without daily breakdown
-                        result.total_views += count;
+                        if count == 0 {
+                            continue;
+                        }
+                        if let Some(ref end_time) = v.end_time
+                            && let Some(date) = parse_end_time(end_time)
+                        {
+                            result.push((date, count));
+                        }
                     }
                 }
             }
 
-            // Move window back
             window_end = window_start - chrono::Duration::days(1);
-            // Small delay to avoid rate limiting
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
 
