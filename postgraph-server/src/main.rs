@@ -135,9 +135,7 @@ async fn main() {
                 continue;
             }
             // Task 2: Refresh per-post metrics
-            if let Err(e) =
-                sync::sync_post_metrics(&bg_state.pool, &bg_state.threads, None).await
-            {
+            if let Err(e) = sync::sync_post_metrics(&bg_state.pool, &bg_state.threads, None).await {
                 tracing::error!("Background metrics refresh failed: {e}");
             }
             // Analysis + edge computation

@@ -18,15 +18,13 @@ async fn insert_daily_views(pool: &PgPool, date: NaiveDate, views: i64) {
 /// Insert a post with a given id and timestamp.
 async fn insert_post(pool: &PgPool, id: &str, days_ago: i64) {
     let ts = Utc::now() - Duration::days(days_ago);
-    sqlx::query(
-        "INSERT INTO posts (id, text, timestamp, synced_at) VALUES ($1, $2, $3, NOW())",
-    )
-    .bind(id)
-    .bind(format!("Test post {id}"))
-    .bind(ts)
-    .execute(pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO posts (id, text, timestamp, synced_at) VALUES ($1, $2, $3, NOW())")
+        .bind(id)
+        .bind(format!("Test post {id}"))
+        .bind(ts)
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 /// Insert an engagement snapshot attributed to a specific capture time.
@@ -46,8 +44,7 @@ async fn insert_snapshot(pool: &PgPool, post_id: &str, days_ago: i64, likes: i32
 // ── The production queries (mirrors analytics.rs) ────────────────────────────
 
 /// Total views: SUM of all daily_views rows.
-const TOTAL_VIEWS_QUERY: &str =
-    "SELECT COALESCE(SUM(views), 0)::bigint FROM daily_views";
+const TOTAL_VIEWS_QUERY: &str = "SELECT COALESCE(SUM(views), 0)::bigint FROM daily_views";
 
 /// Single-range sum: views on or after $1 (a NaiveDate).
 const RANGE_SUM_QUERY: &str =
@@ -62,14 +59,16 @@ async fn daily_views_insert(pool: PgPool) {
     let today = Utc::now().date_naive();
     insert_daily_views(&pool, today, 1_234).await;
 
-    let (views,): (i64,) =
-        sqlx::query_as("SELECT views FROM daily_views WHERE date = $1")
-            .bind(today)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let (views,): (i64,) = sqlx::query_as("SELECT views FROM daily_views WHERE date = $1")
+        .bind(today)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
-    assert_eq!(views, 1_234, "inserted row should have the correct view count");
+    assert_eq!(
+        views, 1_234,
+        "inserted row should have the correct view count"
+    );
 }
 
 #[sqlx::test(migrations = "../postgraph-server/migrations")]
@@ -91,14 +90,16 @@ async fn daily_views_upsert_updates_existing_date(pool: PgPool) {
     .await
     .unwrap();
 
-    let (views,): (i64,) =
-        sqlx::query_as("SELECT views FROM daily_views WHERE date = $1")
-            .bind(today)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let (views,): (i64,) = sqlx::query_as("SELECT views FROM daily_views WHERE date = $1")
+        .bind(today)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
-    assert_eq!(views, 800, "upsert should update views for an existing date");
+    assert_eq!(
+        views, 800,
+        "upsert should update views for an existing date"
+    );
 }
 
 #[sqlx::test(migrations = "../postgraph-server/migrations")]
@@ -125,7 +126,10 @@ async fn daily_views_upsert_does_not_duplicate_date(pool: PgPool) {
             .await
             .unwrap();
 
-    assert_eq!(count, 1, "repeated upserts should not create duplicate rows");
+    assert_eq!(
+        count, 1,
+        "repeated upserts should not create duplicate rows"
+    );
 }
 
 #[sqlx::test(migrations = "../postgraph-server/migrations")]
@@ -151,7 +155,10 @@ async fn daily_views_total_sums_all_rows(pool: PgPool) {
         .await
         .unwrap();
 
-    assert_eq!(total, 6_000, "total should be the sum of all daily_views rows");
+    assert_eq!(
+        total, 6_000,
+        "total should be the sum of all daily_views rows"
+    );
 }
 
 // ===========================================================================
@@ -234,7 +241,10 @@ async fn range_sum_excludes_data_outside_window(pool: PgPool) {
         .await
         .unwrap();
 
-    assert_eq!(d30, 0, "data older than 30d should not appear in 30d range sum");
+    assert_eq!(
+        d30, 0,
+        "data older than 30d should not appear in 30d range sum"
+    );
 }
 
 #[sqlx::test(migrations = "../postgraph-server/migrations")]
@@ -252,7 +262,10 @@ async fn range_sum_includes_data_on_boundary_date(pool: PgPool) {
         .await
         .unwrap();
 
-    assert_eq!(d30, 1_000, "boundary date row should be included (>= comparison)");
+    assert_eq!(
+        d30, 1_000,
+        "boundary date row should be included (>= comparison)"
+    );
 }
 
 #[sqlx::test(migrations = "../postgraph-server/migrations")]
@@ -267,12 +280,12 @@ async fn range_sums_production_query_returns_all_columns(pool: PgPool) {
     let b365 = today - chrono::Duration::days(365);
     let b270 = today - chrono::Duration::days(270);
     let b180 = today - chrono::Duration::days(180);
-    let b90  = today - chrono::Duration::days(90);
-    let b60  = today - chrono::Duration::days(60);
-    let b30  = today - chrono::Duration::days(30);
-    let b14  = today - chrono::Duration::days(14);
-    let b7   = today - chrono::Duration::days(7);
-    let b1   = today - chrono::Duration::days(1);
+    let b90 = today - chrono::Duration::days(90);
+    let b60 = today - chrono::Duration::days(60);
+    let b30 = today - chrono::Duration::days(30);
+    let b14 = today - chrono::Duration::days(14);
+    let b7 = today - chrono::Duration::days(7);
+    let b1 = today - chrono::Duration::days(1);
 
     // This mirrors the exact production query in get_views_range_sums
     let row: (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
@@ -307,7 +320,11 @@ async fn range_sums_production_query_returns_all_columns(pool: PgPool) {
     ];
 
     // All 10 columns must be present and non-negative
-    assert_eq!(values.len(), 10, "production query must return 10 range columns");
+    assert_eq!(
+        values.len(),
+        10,
+        "production query must return 10 range columns"
+    );
     for v in &values {
         assert!(*v >= 0, "no range sum should be negative");
     }
@@ -334,8 +351,8 @@ async fn engagement_deltas_attributed_to_captured_at(pool: PgPool) {
     // Engagement deltas should be bucketed by captured_at, not post timestamp.
     insert_post(&pool, "p1", 60).await;
     insert_snapshot(&pool, "p1", 10, 100).await; // first snapshot: 100 likes
-    insert_snapshot(&pool, "p1", 5, 300).await;  // +200 likes, captured 5d ago
-    insert_snapshot(&pool, "p1", 1, 500).await;  // +200 likes, captured 1d ago
+    insert_snapshot(&pool, "p1", 5, 300).await; // +200 likes, captured 5d ago
+    insert_snapshot(&pool, "p1", 1, 500).await; // +200 likes, captured 1d ago
 
     // Query using captured_at attribution (mirrors production get_engagement)
     let rows: Vec<(String, i64)> = sqlx::query_as(
@@ -368,7 +385,10 @@ async fn engagement_deltas_attributed_to_captured_at(pool: PgPool) {
 
     // All deltas should be on capture dates, not the post's publish date (60d ago)
     let total_likes: i64 = rows.iter().map(|(_, v)| v).sum();
-    assert_eq!(total_likes, 500, "total likes should equal final snapshot value");
+    assert_eq!(
+        total_likes, 500,
+        "total likes should equal final snapshot value"
+    );
 
     let today = Utc::now().date_naive();
     let post_publish_date = (today - chrono::Duration::days(60)).to_string();
@@ -421,14 +441,17 @@ async fn engagement_first_snapshot_attributed_to_captured_at_not_post_date(pool:
 
     let today = Utc::now().date_naive();
     let capture_date = (today - chrono::Duration::days(5)).to_string();
-    let post_date    = (today - chrono::Duration::days(30)).to_string();
+    let post_date = (today - chrono::Duration::days(30)).to_string();
 
     let (date, delta) = &rows[0];
     assert_eq!(
         date, &capture_date,
         "delta should be attributed to captured_at date ({capture_date}), not post date ({post_date})"
     );
-    assert_eq!(*delta, 400, "first snapshot delta should equal the full likes count");
+    assert_eq!(
+        *delta, 400,
+        "first snapshot delta should equal the full likes count"
+    );
 }
 
 #[sqlx::test(migrations = "../postgraph-server/migrations")]
@@ -437,7 +460,7 @@ async fn engagement_api_glitch_does_not_produce_negative_delta(pool: PgPool) {
     // negative deltas from corrupting the sum.
     insert_post(&pool, "p1", 10).await;
     insert_snapshot(&pool, "p1", 9, 100).await;
-    insert_snapshot(&pool, "p1", 5, 80).await;  // glitch: lower than previous
+    insert_snapshot(&pool, "p1", 5, 80).await; // glitch: lower than previous
     insert_snapshot(&pool, "p1", 1, 150).await;
 
     let rows: Vec<(String, i64)> = sqlx::query_as(
@@ -469,7 +492,10 @@ async fn engagement_api_glitch_does_not_produce_negative_delta(pool: PgPool) {
     .unwrap();
 
     let total: i64 = rows.iter().map(|(_, v)| v).sum();
-    assert_eq!(total, 150, "MAX-based deltas should handle API glitches; total = final value");
+    assert_eq!(
+        total, 150,
+        "MAX-based deltas should handle API glitches; total = final value"
+    );
 
     for (_, delta) in &rows {
         assert!(*delta >= 0, "no delta should be negative");
@@ -508,5 +534,8 @@ async fn engagement_empty_snapshots_returns_no_rows(pool: PgPool) {
     .await
     .unwrap();
 
-    assert!(rows.is_empty(), "post with no snapshots should produce no engagement rows");
+    assert!(
+        rows.is_empty(),
+        "post with no snapshots should produce no engagement rows"
+    );
 }

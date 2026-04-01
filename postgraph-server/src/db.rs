@@ -493,10 +493,9 @@ pub async fn upsert_daily_views(
 
 /// Get the most recent date in daily_views, or None if table is empty.
 pub async fn get_max_daily_views_date(pool: &PgPool) -> sqlx::Result<Option<chrono::NaiveDate>> {
-    let row: (Option<chrono::NaiveDate>,) =
-        sqlx::query_as("SELECT MAX(date) FROM daily_views")
-            .fetch_one(pool)
-            .await?;
+    let row: (Option<chrono::NaiveDate>,) = sqlx::query_as("SELECT MAX(date) FROM daily_views")
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 

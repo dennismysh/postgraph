@@ -86,7 +86,6 @@ pub struct PostInsights {
     pub shares: i32,
 }
 
-
 impl ThreadsClient {
     pub fn new(access_token: String) -> Self {
         let client = Client::builder()
@@ -248,7 +247,9 @@ impl ThreadsClient {
 
             let url = format!(
                 "{}/me/threads_insights?metric=views&since={}&until={}&access_token={}",
-                BASE_URL, since, until,
+                BASE_URL,
+                since,
+                until,
                 self.token().await
             );
 

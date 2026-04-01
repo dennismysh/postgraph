@@ -377,9 +377,7 @@ pub async fn get_analytics(
     let analyzed_count = posts.iter().filter(|p| p.analyzed_at.is_some()).count();
 
     // Total views from the authoritative source: daily_views
-    let total_views = db::get_daily_views_total(&state.pool)
-        .await
-        .unwrap_or(0);
+    let total_views = db::get_daily_views_total(&state.pool).await.unwrap_or(0);
 
     Ok(Json(AnalyticsData {
         total_posts: posts.len(),

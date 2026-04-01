@@ -51,7 +51,10 @@ pub async fn sync_posts(
             }
         }
 
-        info!("Discovered {} posts (batch of {})", total_synced, post_count);
+        info!(
+            "Discovered {} posts (batch of {})",
+            total_synced, post_count
+        );
 
         let next_cursor = response
             .paging
@@ -164,10 +167,7 @@ pub async fn sync_post_metrics(
 /// Fetch daily views from the user-level insights API and store in daily_views.
 /// On first run (empty table), backfills up to 730 days.
 /// On subsequent runs, fetches only the last 7 days.
-pub async fn sync_daily_views(
-    pool: &PgPool,
-    client: &ThreadsClient,
-) -> Result<u32, AppError> {
+pub async fn sync_daily_views(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppError> {
     let max_date = db::get_max_daily_views_date(pool).await?;
 
     let max_days = if max_date.is_some() {
@@ -212,11 +212,17 @@ fn parse_threads_timestamp(ts: &str) -> Option<DateTime<Utc>> {
 fn threads_post_to_post(tp: &ThreadsPost) -> Post {
     let timestamp = match tp.timestamp.as_deref() {
         Some(ts) => parse_threads_timestamp(ts).unwrap_or_else(|| {
-            warn!("Post {} has unparseable timestamp {ts:?}, using now()", tp.id);
+            warn!(
+                "Post {} has unparseable timestamp {ts:?}, using now()",
+                tp.id
+            );
             Utc::now()
         }),
         None => {
-            warn!("Post {} has no timestamp from Threads API, using now()", tp.id);
+            warn!(
+                "Post {} has no timestamp from Threads API, using now()",
+                tp.id
+            );
             Utc::now()
         }
     };
