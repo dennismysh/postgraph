@@ -1,11 +1,9 @@
 import type { Post } from '$lib/api';
-import { fft, ifft, powerSpectrum, lowPassFilter, type SpectrumEntry } from '$lib/fft';
+import { fft, powerSpectrum, lowPassFilter, type SpectrumEntry } from '$lib/fft';
 
-export type DailyEntry = {
+export type CadenceEntry = {
   date: string;
-  likes: number;
   posts: number;
-  smoothed?: number;
 };
 
 export type HourlyEntry = {
@@ -13,26 +11,22 @@ export type HourlyEntry = {
   count: number;
 };
 
-/** Aggregate posts into a gap-filled daily time series */
-export function postsToDaily(posts: Post[]): DailyEntry[] {
-  const map = new Map<string, { likes: number; posts: number }>();
+/** Count posts per day, gap-filled with honest zeros (no posts = 0 posts) */
+export function postsToCadence(posts: Post[]): CadenceEntry[] {
+  const map = new Map<string, number>();
   for (const p of posts) {
     const date = p.timestamp.slice(0, 10);
-    const entry = map.get(date) ?? { likes: 0, posts: 0 };
-    entry.likes += p.likes;
-    entry.posts += 1;
-    map.set(date, entry);
+    map.set(date, (map.get(date) ?? 0) + 1);
   }
   const dates = [...map.keys()].sort();
   if (dates.length === 0) return [];
 
-  const result: DailyEntry[] = [];
+  const result: CadenceEntry[] = [];
   const start = new Date(dates[0]);
   const end = new Date(dates[dates.length - 1]);
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const key = d.toISOString().slice(0, 10);
-    const entry = map.get(key);
-    result.push({ date: key, likes: entry?.likes ?? 0, posts: entry?.posts ?? 0 });
+    result.push({ date: key, posts: map.get(key) ?? 0 });
   }
   return result;
 }

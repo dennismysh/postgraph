@@ -105,6 +105,15 @@ pub struct HistogramQuery {
     pub since: Option<String>,
 }
 
+#[derive(Serialize)]
+pub struct DailyEngagementDelta {
+    pub date: String,
+    pub likes: i64,
+    pub replies: i64,
+    pub reposts: i64,
+    pub quotes: i64,
+}
+
 // ── Chart A: Daily Reach (from daily_views) ─────────────────────────
 
 pub async fn get_views(
@@ -297,6 +306,70 @@ pub async fn get_views_range_sums(
     sums.insert("24h".to_string(), row.9);
 
     Ok(Json(ViewsRangeSums { sums }))
+}
+
+// ── Engagement Daily Deltas (for Fourier analysis) ─────────────────
+
+pub async fn get_engagement_daily_deltas(
+    State(state): State<AppState>,
+    Query(query): Query<ViewsQuery>,
+) -> Result<Json<Vec<DailyEngagementDelta>>, axum::http::StatusCode> {
+    let since = query
+        .since
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.date_naive());
+
+    let rows: Vec<(String, i64, i64, i64, i64)> = sqlx::query_as(
+        r#"WITH daily_snapshots AS (
+               SELECT DISTINCT ON (post_id, captured_at::date)
+                   post_id,
+                   captured_at::date AS capture_date,
+                   likes, replies_count, reposts, quotes
+               FROM engagement_snapshots
+               ORDER BY post_id, captured_at::date, captured_at DESC
+           ),
+           deltas AS (
+               SELECT
+                   capture_date,
+                   likes - LAG(likes) OVER w AS d_likes,
+                   replies_count - LAG(replies_count) OVER w AS d_replies,
+                   reposts - LAG(reposts) OVER w AS d_reposts,
+                   quotes - LAG(quotes) OVER w AS d_quotes
+               FROM daily_snapshots
+               WINDOW w AS (PARTITION BY post_id ORDER BY capture_date)
+           )
+           SELECT
+               capture_date::text AS date,
+               COALESCE(SUM(d_likes), 0)::bigint AS likes,
+               COALESCE(SUM(d_replies), 0)::bigint AS replies,
+               COALESCE(SUM(d_reposts), 0)::bigint AS reposts,
+               COALESCE(SUM(d_quotes), 0)::bigint AS quotes
+           FROM deltas
+           WHERE capture_date IS NOT NULL
+             AND ($1::date IS NULL OR capture_date >= $1)
+           GROUP BY capture_date
+           ORDER BY capture_date"#,
+    )
+    .bind(since)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let points: Vec<DailyEngagementDelta> = rows
+        .into_iter()
+        .map(
+            |(date, likes, replies, reposts, quotes)| DailyEngagementDelta {
+                date,
+                likes,
+                replies,
+                reposts,
+                quotes,
+            },
+        )
+        .collect();
+
+    Ok(Json(points))
 }
 
 // ── Analytics Summary ───────────────────────────────────────────────

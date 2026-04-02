@@ -270,6 +270,10 @@ async fn main() {
             get(routes::analytics::get_engagement),
         )
         .route(
+            "/api/analytics/engagement/daily-deltas",
+            get(routes::analytics::get_engagement_daily_deltas),
+        )
+        .route(
             "/api/analytics/histograms",
             get(routes::analytics::get_histograms),
         )

@@ -1,3 +1,331 @@
+# Fourier Data Integrity Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Fix the Fourier page to use honest data sources (daily_views, engagement_snapshots deltas, post counts) instead of fabricated time series.
+
+**Architecture:** Add one new backend endpoint for engagement daily deltas. Rewrite the frontend Fourier component to fetch from three honest sources: existing views endpoint, new engagement deltas endpoint, and posts list for cadence. Keep FFT math and chart infrastructure unchanged.
+
+**Tech Stack:** Rust/axum (backend endpoint), Svelte 5 + Chart.js (frontend), TypeScript
+
+**Spec:** `docs/superpowers/specs/2026-04-01-fourier-data-integrity-design.md`
+
+---
+
+## File Structure
+
+| File | Action | Responsibility |
+|------|--------|---------------|
+| `postgraph-server/src/routes/analytics.rs` | Modify | Add `DailyEngagementDelta` type + `get_engagement_daily_deltas` handler |
+| `postgraph-server/src/main.rs` | Modify | Register new route |
+| `web/src/routes/api/analytics/engagement/daily-deltas/+server.ts` | Create | SvelteKit proxy to backend |
+| `web/src/lib/api.ts` | Modify | Add `DailyEngagementDelta` interface + `getEngagementDailyDeltas` function |
+| `web/src/lib/fourier.ts` | Rewrite | Remove `postsToDaily`, add `postsToCadence` |
+| `web/src/lib/components/Fourier.svelte` | Rewrite | New data flow: 3 API calls, 4 chart sections |
+
+**Unchanged:** `web/src/lib/fft.ts`, `web/src/routes/fourier/+page.svelte`
+
+---
+
+### Task 1: Backend — Add engagement daily deltas endpoint
+
+**Files:**
+- Modify: `postgraph-server/src/routes/analytics.rs`
+- Modify: `postgraph-server/src/main.rs`
+
+This follows the existing pattern in analytics.rs: local types + inline SQL in the handler.
+
+- [ ] **Step 1: Add the response type**
+
+Add after the `HistogramQuery` struct (line 106) in `postgraph-server/src/routes/analytics.rs`:
+
+```rust
+#[derive(Serialize)]
+pub struct DailyEngagementDelta {
+    pub date: String,
+    pub likes: i64,
+    pub replies: i64,
+    pub reposts: i64,
+    pub quotes: i64,
+}
+```
+
+- [ ] **Step 2: Add the handler function**
+
+Add after the `get_views_range_sums` function (after line 300) in `postgraph-server/src/routes/analytics.rs`:
+
+```rust
+// ── Engagement Daily Deltas (for Fourier analysis) ─────────────────
+
+pub async fn get_engagement_daily_deltas(
+    State(state): State<AppState>,
+    Query(query): Query<ViewsQuery>,
+) -> Result<Json<Vec<DailyEngagementDelta>>, axum::http::StatusCode> {
+    let since = query
+        .since
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.date_naive());
+
+    let rows: Vec<(String, i64, i64, i64, i64)> = sqlx::query_as(
+        r#"WITH daily_snapshots AS (
+               SELECT DISTINCT ON (post_id, captured_at::date)
+                   post_id,
+                   captured_at::date AS capture_date,
+                   likes, replies_count, reposts, quotes
+               FROM engagement_snapshots
+               ORDER BY post_id, captured_at::date, captured_at DESC
+           ),
+           deltas AS (
+               SELECT
+                   capture_date,
+                   likes - LAG(likes) OVER w AS d_likes,
+                   replies_count - LAG(replies_count) OVER w AS d_replies,
+                   reposts - LAG(reposts) OVER w AS d_reposts,
+                   quotes - LAG(quotes) OVER w AS d_quotes
+               FROM daily_snapshots
+               WINDOW w AS (PARTITION BY post_id ORDER BY capture_date)
+           )
+           SELECT
+               capture_date::text AS date,
+               COALESCE(SUM(d_likes), 0)::bigint AS likes,
+               COALESCE(SUM(d_replies), 0)::bigint AS replies,
+               COALESCE(SUM(d_reposts), 0)::bigint AS reposts,
+               COALESCE(SUM(d_quotes), 0)::bigint AS quotes
+           FROM deltas
+           WHERE capture_date IS NOT NULL
+             AND ($1::date IS NULL OR capture_date >= $1)
+           GROUP BY capture_date
+           ORDER BY capture_date"#,
+    )
+    .bind(since)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let points: Vec<DailyEngagementDelta> = rows
+        .into_iter()
+        .map(|(date, likes, replies, reposts, quotes)| DailyEngagementDelta {
+            date,
+            likes,
+            replies,
+            reposts,
+            quotes,
+        })
+        .collect();
+
+    Ok(Json(points))
+}
+```
+
+Note: Uses `replies_count` (not `replies`) to match the actual column name in `engagement_snapshots`. Uses `LAG()` instead of `MAX()` for true previous-value deltas. Does not clamp with `GREATEST()` — negative deltas from API corrections are kept honest.
+
+- [ ] **Step 3: Register the route**
+
+In `postgraph-server/src/main.rs`, add after the `.route("/api/analytics/engagement", ...)` block (after line 271):
+
+```rust
+        .route(
+            "/api/analytics/engagement/daily-deltas",
+            get(routes::analytics::get_engagement_daily_deltas),
+        )
+```
+
+- [ ] **Step 4: Verify it compiles**
+
+Run: `cargo check --workspace`
+Expected: compiles with no errors
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add postgraph-server/src/routes/analytics.rs postgraph-server/src/main.rs
+git commit -m "feat: add engagement daily deltas endpoint for Fourier page"
+```
+
+---
+
+### Task 2: Frontend — Add proxy route and API client function
+
+**Files:**
+- Create: `web/src/routes/api/analytics/engagement/daily-deltas/+server.ts`
+- Modify: `web/src/lib/api.ts`
+
+- [ ] **Step 1: Create SvelteKit proxy route**
+
+Create `web/src/routes/api/analytics/engagement/daily-deltas/+server.ts`:
+
+```typescript
+import { proxyToBackend } from '$lib/server/proxy';
+import type { RequestHandler } from './$types';
+
+export const GET: RequestHandler = async ({ url }) => {
+  const since = url.searchParams.get('since');
+  const searchParams = new URLSearchParams();
+  if (since) searchParams.set('since', since);
+  return proxyToBackend('/api/analytics/engagement/daily-deltas', { searchParams });
+};
+```
+
+This follows the exact same pattern as the existing `web/src/routes/api/analytics/engagement/+server.ts`.
+
+- [ ] **Step 2: Add TypeScript interface to api.ts**
+
+In `web/src/lib/api.ts`, add after the `PostEngagementPoint` interface (after line 159):
+
+```typescript
+export interface DailyEngagementDelta {
+  date: string;
+  likes: number;
+  replies: number;
+  reposts: number;
+  quotes: number;
+}
+```
+
+- [ ] **Step 3: Add API client function**
+
+In `web/src/lib/api.ts`, add inside the `api` object (after the `getEngagement` method, after line 259):
+
+```typescript
+  getEngagementDailyDeltas: (since?: string) => {
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    const qs = params.toString();
+    return fetchApi<DailyEngagementDelta[]>(`/api/analytics/engagement/daily-deltas${qs ? `?${qs}` : ''}`);
+  },
+```
+
+- [ ] **Step 4: Verify frontend compiles**
+
+Run: `cd web && npx svelte-check`
+Expected: no errors
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add web/src/routes/api/analytics/engagement/daily-deltas/+server.ts web/src/lib/api.ts
+git commit -m "feat: add engagement daily deltas proxy route and API client"
+```
+
+---
+
+### Task 3: Frontend — Rewrite fourier.ts
+
+**Files:**
+- Modify: `web/src/lib/fourier.ts`
+
+Replace the fabricated `postsToDaily` with an honest `postsToCadence` that only counts posts per day. Keep `postsToHourly`, `computeSpectrum`, `computeSmoothed`, `topPeaks` unchanged.
+
+- [ ] **Step 1: Rewrite fourier.ts**
+
+Replace the entire contents of `web/src/lib/fourier.ts` with:
+
+```typescript
+import type { Post } from '$lib/api';
+import { fft, ifft, powerSpectrum, lowPassFilter, type SpectrumEntry } from '$lib/fft';
+
+export type CadenceEntry = {
+  date: string;
+  posts: number;
+};
+
+export type HourlyEntry = {
+  hour: number;
+  count: number;
+};
+
+/** Count posts per day, gap-filled with honest zeros (no posts = 0 posts) */
+export function postsToCadence(posts: Post[]): CadenceEntry[] {
+  const map = new Map<string, number>();
+  for (const p of posts) {
+    const date = p.timestamp.slice(0, 10);
+    map.set(date, (map.get(date) ?? 0) + 1);
+  }
+  const dates = [...map.keys()].sort();
+  if (dates.length === 0) return [];
+
+  const result: CadenceEntry[] = [];
+  const start = new Date(dates[0]);
+  const end = new Date(dates[dates.length - 1]);
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const key = d.toISOString().slice(0, 10);
+    result.push({ date: key, posts: map.get(key) ?? 0 });
+  }
+  return result;
+}
+
+/** Aggregate posts into 24 hourly buckets */
+export function postsToHourly(posts: Post[]): HourlyEntry[] {
+  const buckets = Array.from({ length: 24 }, (_, i) => ({ hour: i, count: 0 }));
+  for (const p of posts) {
+    const hour = new Date(p.timestamp).getHours();
+    buckets[hour].count += 1;
+  }
+  return buckets;
+}
+
+/** Compute power spectrum with DC removal and zero-padding */
+export function computeSpectrum(signal: number[]): SpectrumEntry[] {
+  const totalDays = signal.length;
+  const mean = signal.reduce((a, b) => a + b, 0) / totalDays;
+  const centered = signal.map(v => v - mean);
+
+  let N = 1;
+  while (N < totalDays) N <<= 1;
+  const re = new Array(N).fill(0);
+  const im = new Array(N).fill(0);
+  for (let i = 0; i < totalDays; i++) re[i] = centered[i];
+
+  fft(re, im);
+  return powerSpectrum(re, im, totalDays);
+}
+
+/** Compute smoothed trend via low-pass filter */
+export function computeSmoothed(signal: number[], cutoffRatio = 0.06): number[] {
+  return lowPassFilter(signal, cutoffRatio);
+}
+
+/** Return top n spectrum entries by magnitude */
+export function topPeaks(spectrum: SpectrumEntry[], n: number): SpectrumEntry[] {
+  return [...spectrum].sort((a, b) => b.magnitude - a.magnitude).slice(0, n);
+}
+
+export type { SpectrumEntry };
+```
+
+Key changes:
+- Removed `DailyEntry` type and `postsToDaily()` (the fabrication function)
+- Added `CadenceEntry` type and `postsToCadence()` that only counts posts per day
+- Gap-filling with 0 is honest for posting cadence: no posts that day means 0 posts
+- All other functions unchanged
+
+- [ ] **Step 2: Verify frontend compiles**
+
+Run: `cd web && npx svelte-check`
+Expected: errors in `Fourier.svelte` (references to removed `postsToDaily` and `DailyEntry`). This is expected — we fix it in Task 4.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add web/src/lib/fourier.ts
+git commit -m "refactor: replace fabricated postsToDaily with honest postsToCadence"
+```
+
+---
+
+### Task 4: Frontend — Rewrite Fourier.svelte
+
+**Files:**
+- Modify: `web/src/lib/components/Fourier.svelte`
+
+Complete rewrite of the data flow. The chart infrastructure (Chart.js config, dark theme, peak annotations, styling) stays. What changes: data fetching, chart wiring, stats ribbon.
+
+- [ ] **Step 1: Rewrite Fourier.svelte**
+
+Replace the entire `<script>` block and template of `web/src/lib/components/Fourier.svelte`. Keep the `<style>` block unchanged.
+
+```svelte
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
@@ -59,10 +387,6 @@
   let cadenceChart: Chart | null = null;
   let cadenceSpectrumChart: Chart | null = null;
   let hourlyChart: Chart | null = null;
-
-  let showViewsSpectrum = $state(false);
-  let showEngagementSpectrum = $state(false);
-  let showCadenceSpectrum = $state(false);
 
   const darkTooltip = {
     backgroundColor: '#1a1a1a',
@@ -147,7 +471,6 @@
     viewsChart?.destroy();
     viewsSpectrumChart?.destroy();
     const filtered = filterByRange(allViews, viewsRange);
-    showViewsSpectrum = filtered.length >= 8;
     if (filtered.length < 2) { viewsChart = null; viewsSpectrumChart = null; return; }
 
     const signal = filtered.map(d => d.views);
@@ -238,7 +561,6 @@
     engagementChart?.destroy();
     engagementSpectrumChart?.destroy();
     const filtered = filterByRange(allDeltas, engagementRange);
-    showEngagementSpectrum = filtered.length >= 8;
     if (filtered.length < 2) { engagementChart = null; engagementSpectrumChart = null; return; }
 
     engagementChart = new Chart(engagementCanvas, {
@@ -332,7 +654,6 @@
     cadenceSpectrumChart?.destroy();
     const filtered = filterPostsByRange(allPosts, cadenceRange);
     const cadence = postsToCadence(filtered);
-    showCadenceSpectrum = cadence.length >= 8;
     if (cadence.length < 2) { cadenceChart = null; cadenceSpectrumChart = null; return; }
 
     const signal = cadence.map(d => d.posts);
@@ -545,9 +866,7 @@
           </select>
         </div>
         <div class="chart-wrap"><canvas bind:this={viewsCanvas}></canvas></div>
-        {#if showViewsSpectrum}
-          <div class="spectrum-wrap"><canvas bind:this={viewsSpectrumCanvas}></canvas></div>
-        {/if}
+        <div class="spectrum-wrap"><canvas bind:this={viewsSpectrumCanvas}></canvas></div>
       </div>
 
       <!-- Engagement Velocity + Spectrum -->
@@ -561,9 +880,7 @@
           </select>
         </div>
         <div class="chart-wrap"><canvas bind:this={engagementCanvas}></canvas></div>
-        {#if showEngagementSpectrum}
-          <div class="spectrum-wrap"><canvas bind:this={engagementSpectrumCanvas}></canvas></div>
-        {/if}
+        <div class="spectrum-wrap"><canvas bind:this={engagementSpectrumCanvas}></canvas></div>
       </div>
 
       <!-- Posting Cadence + Spectrum -->
@@ -577,9 +894,7 @@
           </select>
         </div>
         <div class="chart-wrap"><canvas bind:this={cadenceCanvas}></canvas></div>
-        {#if showCadenceSpectrum}
-          <div class="spectrum-wrap"><canvas bind:this={cadenceSpectrumCanvas}></canvas></div>
-        {/if}
+        <div class="spectrum-wrap"><canvas bind:this={cadenceSpectrumCanvas}></canvas></div>
       </div>
 
       <!-- Hourly Distribution (full width) -->
@@ -602,97 +917,13 @@
     </div>
   {/if}
 </div>
+```
 
-<style>
-  .fourier-page {
-    padding: 1.5rem;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  .status {
-    text-align: center;
-    color: #888;
-    padding: 4rem 1rem;
-    font-size: 1rem;
-  }
-  .status.error {
-    color: #f87171;
-  }
+- [ ] **Step 2: Add spectrum-wrap CSS**
 
-  /* Stats Ribbon */
-  .ribbon {
-    display: flex;
-    gap: 16px;
-    margin-bottom: 1.5rem;
-  }
-  .kpi {
-    flex: 1;
-    background: #111;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  .kpi-label {
-    color: #888;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .kpi-value {
-    color: #eee;
-    font-size: 1.5rem;
-    font-weight: 600;
-  }
+Add to the existing `<style>` block in Fourier.svelte, after the `.chart-wrap` rule:
 
-  /* Chart Grid */
-  .grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }
-  .full-width {
-    grid-column: 1 / -1;
-  }
-  .chart-card {
-    background: #111;
-    border: 1px solid #333;
-    border-radius: 8px;
-    padding: 1rem;
-  }
-  .chart-card h3 {
-    margin: 0 0 0.75rem;
-    font-size: 0.85rem;
-    color: #aaa;
-    font-weight: 500;
-  }
-  .chart-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-  .chart-header h3 {
-    margin: 0;
-  }
-  .range-select {
-    background: #222;
-    color: #ccc;
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-    cursor: pointer;
-  }
-  .range-select:hover { border-color: #555; }
-  .range-select:focus { outline: none; border-color: #8b5cf6; }
-  .chart-wrap {
-    position: relative;
-    height: 260px;
-  }
+```css
   .spectrum-wrap {
     position: relative;
     height: 160px;
@@ -700,28 +931,54 @@
     border-top: 1px solid #222;
     padding-top: 0.75rem;
   }
+```
 
-  /* Hourly stats */
-  .hour-stats {
-    display: flex;
-    gap: 2rem;
-    margin-top: 0.75rem;
-    font-size: 0.8rem;
-    color: #888;
-  }
-  .hour-stats strong {
-    color: #ccc;
-  }
+- [ ] **Step 3: Verify frontend compiles**
 
-  @media (max-width: 768px) {
-    .ribbon {
-      flex-wrap: wrap;
-    }
-    .kpi {
-      min-width: calc(50% - 8px);
-    }
-    .grid {
-      grid-template-columns: 1fr;
-    }
-  }
-</style>
+Run: `cd web && npx svelte-check`
+Expected: no errors
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add web/src/lib/components/Fourier.svelte
+git commit -m "feat: rewrite Fourier page for honest data sources (views, engagement deltas, cadence)"
+```
+
+---
+
+### Task 5: Verify end-to-end
+
+- [ ] **Step 1: Backend compiles**
+
+Run: `cargo check --workspace`
+Expected: compiles cleanly
+
+- [ ] **Step 2: Frontend compiles**
+
+Run: `cd web && npx svelte-check`
+Expected: no type errors
+
+- [ ] **Step 3: Frontend builds**
+
+Run: `cd web && npm run build`
+Expected: builds successfully
+
+- [ ] **Step 4: Cargo clippy**
+
+Run: `cargo clippy --workspace --all-targets`
+Expected: no warnings
+
+- [ ] **Step 5: Cargo fmt**
+
+Run: `cargo fmt --all --check`
+Expected: no formatting issues (or run `cargo fmt --all` to fix)
+
+- [ ] **Step 6: Commit any final fixes**
+
+If any of the above checks produced issues, fix and commit:
+
+```bash
+git add -A
+git commit -m "chore: fix lint/format issues from Fourier rewrite"
+```
