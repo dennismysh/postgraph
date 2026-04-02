@@ -102,6 +102,22 @@ export interface PostDetail {
   engagement_rate: number;
 }
 
+export interface DebugPost {
+  id: string;
+  text_preview: string | null;
+  timestamp: string;
+  views: number;
+  likes: number;
+  replies_count: number;
+  reposts: number;
+  quotes: number;
+  synced_at: string;
+  sentiment: number | null;
+  intent: string | null;
+  subject: string | null;
+  last_captured_at: string | null;
+}
+
 export interface SyncResult {
   posts_synced: number;
   metrics_refreshed: number;
@@ -221,6 +237,12 @@ export const api = {
   },
   getPost: (id: string) => fetchApi<PostDetail>(`/api/posts/${id}`),
   getPosts: () => fetchApi<Post[]>('/api/posts'),
+  getDebugPosts: (since?: string) => {
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    const qs = params.toString();
+    return fetchApi<DebugPost[]>(`/api/posts/debug${qs ? `?${qs}` : ''}`);
+  },
   getAnalytics: () => fetchApi<AnalyticsData>('/api/analytics'),
   triggerSync: () => fetch('/api/sync', {
     method: 'POST',
