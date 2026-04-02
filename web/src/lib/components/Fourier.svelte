@@ -200,6 +200,7 @@
 
     // Spectrum
     if (filtered.length >= 8) {
+      await tick(); // wait for {#if showViewsSpectrum} to render canvas
       const spectrum = computeSpectrum(signal);
       const peaks = topPeaks(spectrum, 2);
       const filteredSpectrum = spectrum.filter(s => parseFloat(s.period) <= 60);
@@ -292,6 +293,7 @@
 
     // Spectrum on combined engagement signal (likes + replies + reposts)
     if (filtered.length >= 8) {
+      await tick(); // wait for {#if showEngagementSpectrum} to render canvas
       const combined = filtered.map(d => d.likes + d.replies + d.reposts);
       const spectrum = computeSpectrum(combined);
       const peaks = topPeaks(spectrum, 2);
@@ -380,6 +382,7 @@
 
     // Spectrum
     if (cadence.length >= 8) {
+      await tick(); // wait for {#if showCadenceSpectrum} to render canvas
       const spectrum = computeSpectrum(signal);
       const peaks = topPeaks(spectrum, 2);
       const filteredSpectrum = spectrum.filter(s => parseFloat(s.period) <= 60);
