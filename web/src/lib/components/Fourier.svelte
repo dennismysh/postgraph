@@ -1,24 +1,26 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import Chart from 'chart.js/auto';
-  import { api, type Post } from '$lib/api';
+  import { api, type Post, type ViewsPoint, type DailyEngagementDelta } from '$lib/api';
   import {
-    postsToDaily, postsToHourly, computeSpectrum, computeSmoothed, topPeaks,
-    type DailyEntry, type HourlyEntry, type SpectrumEntry,
+    postsToCadence, postsToHourly, computeSpectrum, computeSmoothed, topPeaks,
+    type CadenceEntry, type HourlyEntry, type SpectrumEntry,
   } from '$lib/fourier';
 
   let loading = $state(true);
   let error: string | null = $state(null);
   let hasEnoughData = $state(false);
 
-  // All fetched posts (unfiltered)
+  // Raw data from API
+  let allViews: ViewsPoint[] = [];
+  let allDeltas: DailyEngagementDelta[] = [];
   let allPosts: Post[] = [];
 
-  // Stats (computed from all posts)
-  let dominantEngagement = $state('—');
-  let dominantCadence = $state('—');
-  let totalLikes = $state(0);
+  // Stats ribbon
+  let dominantViewsCycle = $state('—');
+  let dominantCadenceCycle = $state('—');
   let avgPostsPerDay = $state('0');
+  let totalViews = $state(0);
 
   // Per-card time range state
   const timeRanges = [
@@ -32,28 +34,35 @@
     { label: 'All Time', value: 'all' },
   ];
 
-  let likesRange = $state('30d');
-  let spectrumRange = $state('30d');
-  let postsRange = $state('30d');
-  let cadenceRange = $state('30d');
+  let viewsRange = $state('90d');
+  let engagementRange = $state('90d');
+  let cadenceRange = $state('90d');
   let hourlyRange = $state('30d');
 
-  // Hourly data for bucket stats (tracks hourlyRange)
+  // Hourly data for bucket stats
   let hourly: HourlyEntry[] = $state([]);
 
   // Canvas refs
-  let likesCanvas: HTMLCanvasElement = $state(null!);
-  let spectrumCanvas: HTMLCanvasElement = $state(null!);
-  let postsCanvas: HTMLCanvasElement = $state(null!);
+  let viewsCanvas: HTMLCanvasElement = $state(null!);
+  let viewsSpectrumCanvas: HTMLCanvasElement = $state(null!);
+  let engagementCanvas: HTMLCanvasElement = $state(null!);
+  let engagementSpectrumCanvas: HTMLCanvasElement = $state(null!);
   let cadenceCanvas: HTMLCanvasElement = $state(null!);
+  let cadenceSpectrumCanvas: HTMLCanvasElement = $state(null!);
   let hourlyCanvas: HTMLCanvasElement = $state(null!);
 
   // Chart instances
-  let likesChart: Chart | null = null;
-  let spectrumChart: Chart | null = null;
-  let postsChart: Chart | null = null;
+  let viewsChart: Chart | null = null;
+  let viewsSpectrumChart: Chart | null = null;
+  let engagementChart: Chart | null = null;
+  let engagementSpectrumChart: Chart | null = null;
   let cadenceChart: Chart | null = null;
+  let cadenceSpectrumChart: Chart | null = null;
   let hourlyChart: Chart | null = null;
+
+  let showViewsSpectrum = $state(false);
+  let showEngagementSpectrum = $state(false);
+  let showCadenceSpectrum = $state(false);
 
   const darkTooltip = {
     backgroundColor: '#1a1a1a',
@@ -114,6 +123,15 @@
     return d.slice(5); // MM-DD
   }
 
+  function filterByRange<T extends { date: string }>(data: T[], range: string): T[] {
+    if (range === 'all') return data;
+    const days = parseInt(range);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return data.filter(d => d.date >= cutoffStr);
+  }
+
   function filterPostsByRange(posts: Post[], range: string): Post[] {
     if (range === 'all') return posts;
     const days = parseInt(range);
@@ -122,23 +140,27 @@
     return posts.filter(p => new Date(p.timestamp) >= cutoff);
   }
 
-  async function rebuildLikesChart() {
-    await tick();
-    likesChart?.destroy();
-    const filtered = filterPostsByRange(allPosts, likesRange);
-    const daily = postsToDaily(filtered);
-    const likeSignal = daily.map(d => d.likes);
-    const smoothed = computeSmoothed(likeSignal);
-    daily.forEach((d, i) => { d.smoothed = smoothed[i]; });
+  // ── Chart 1: Daily Views ──────────────────────────────────────────
 
-    likesChart = new Chart(likesCanvas, {
+  async function rebuildViewsChart() {
+    await tick();
+    viewsChart?.destroy();
+    viewsSpectrumChart?.destroy();
+    const filtered = filterByRange(allViews, viewsRange);
+    showViewsSpectrum = filtered.length >= 8;
+    if (filtered.length < 2) { viewsChart = null; viewsSpectrumChart = null; return; }
+
+    const signal = filtered.map(d => d.views);
+    const smoothed = computeSmoothed(signal);
+
+    viewsChart = new Chart(viewsCanvas, {
       type: 'line',
       data: {
-        labels: daily.map(d => formatDate(d.date)),
+        labels: filtered.map(d => formatDate(d.date)),
         datasets: [
           {
-            label: 'Likes',
-            data: daily.map(d => d.likes),
+            label: 'Views',
+            data: signal,
             borderColor: '#8b5cf6',
             backgroundColor: (ctx: { chart: Chart }) => {
               const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
@@ -148,13 +170,13 @@
             },
             fill: true,
             borderWidth: 1.5,
-            pointRadius: daily.length > 30 ? 0 : 2,
+            pointRadius: filtered.length > 30 ? 0 : 2,
             pointHoverRadius: 4,
             cubicInterpolationMode: 'monotone' as const,
           },
           {
             label: 'Trend',
-            data: daily.map(d => d.smoothed ?? null),
+            data: smoothed,
             borderColor: '#f59e0b',
             borderWidth: 2.5,
             pointRadius: 0,
@@ -175,136 +197,221 @@
         scales: { x: darkScaleX, y: darkScaleY },
       },
     });
-  }
 
-  async function rebuildSpectrumChart() {
-    await tick();
-    spectrumChart?.destroy();
-    const filtered = filterPostsByRange(allPosts, spectrumRange);
-    const daily = postsToDaily(filtered);
-    if (daily.length < 8) {
-      spectrumChart = null;
-      return;
+    // Spectrum
+    if (filtered.length >= 8) {
+      const spectrum = computeSpectrum(signal);
+      const peaks = topPeaks(spectrum, 2);
+      const filteredSpectrum = spectrum.filter(s => parseFloat(s.period) <= 60);
+
+      viewsSpectrumChart = new Chart(viewsSpectrumCanvas, {
+        type: 'bar',
+        data: {
+          labels: filteredSpectrum.map(s => s.period),
+          datasets: [{
+            label: 'Magnitude',
+            data: filteredSpectrum.map(s => s.magnitude),
+            backgroundColor: 'rgba(139,92,246,0.6)',
+            borderColor: '#8b5cf6',
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' as const },
+          plugins: { legend: { display: false }, tooltip: darkTooltip },
+          scales: {
+            x: { ...darkScaleX, title: { display: true, text: 'period (days)', color: '#888', font: { size: 11 } } },
+            y: darkScaleY,
+          },
+        },
+        plugins: [peakAnnotationPlugin(peaks, '#f59e0b')],
+      });
     }
-    const likeSignal = daily.map(d => d.likes);
-    const spectrum = computeSpectrum(likeSignal);
-    const peaks = topPeaks(spectrum, 2);
-    const filteredSpectrum = spectrum.filter(s => parseFloat(s.period) <= 60);
-
-    spectrumChart = new Chart(spectrumCanvas, {
-      type: 'bar',
-      data: {
-        labels: filteredSpectrum.map(s => s.period),
-        datasets: [{
-          label: 'Magnitude',
-          data: filteredSpectrum.map(s => s.magnitude),
-          backgroundColor: 'rgba(139,92,246,0.6)',
-          borderColor: '#8b5cf6',
-          borderWidth: 1,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { intersect: false, mode: 'index' as const },
-        plugins: {
-          legend: { display: false },
-          tooltip: darkTooltip,
-        },
-        scales: {
-          x: {
-            ...darkScaleX,
-            title: { display: true, text: 'period (days)', color: '#888', font: { size: 11 } },
-          },
-          y: darkScaleY,
-        },
-      },
-      plugins: [peakAnnotationPlugin(peaks, '#f59e0b')],
-    });
   }
 
-  async function rebuildPostsChart() {
+  // ── Chart 2: Engagement Velocity ──────────────────────────────────
+
+  async function rebuildEngagementChart() {
     await tick();
-    postsChart?.destroy();
-    const filtered = filterPostsByRange(allPosts, postsRange);
-    const daily = postsToDaily(filtered);
+    engagementChart?.destroy();
+    engagementSpectrumChart?.destroy();
+    const filtered = filterByRange(allDeltas, engagementRange);
+    showEngagementSpectrum = filtered.length >= 8;
+    if (filtered.length < 2) { engagementChart = null; engagementSpectrumChart = null; return; }
 
-    postsChart = new Chart(postsCanvas, {
-      type: 'bar',
+    engagementChart = new Chart(engagementCanvas, {
+      type: 'line',
       data: {
-        labels: daily.map(d => formatDate(d.date)),
-        datasets: [{
-          label: 'Posts',
-          data: daily.map(d => d.posts),
-          backgroundColor: 'rgba(67,99,216,0.6)',
-          borderColor: '#4363d8',
-          borderWidth: 1,
-        }],
+        labels: filtered.map(d => formatDate(d.date)),
+        datasets: [
+          {
+            label: 'Likes',
+            data: filtered.map(d => d.likes),
+            borderColor: '#f472b6',
+            borderWidth: 1.5,
+            pointRadius: filtered.length > 30 ? 0 : 2,
+            pointHoverRadius: 4,
+            fill: false,
+            cubicInterpolationMode: 'monotone' as const,
+          },
+          {
+            label: 'Replies',
+            data: filtered.map(d => d.replies),
+            borderColor: '#60a5fa',
+            borderWidth: 1.5,
+            pointRadius: filtered.length > 30 ? 0 : 2,
+            pointHoverRadius: 4,
+            fill: false,
+            cubicInterpolationMode: 'monotone' as const,
+          },
+          {
+            label: 'Reposts',
+            data: filtered.map(d => d.reposts),
+            borderColor: '#4ade80',
+            borderWidth: 1.5,
+            pointRadius: filtered.length > 30 ? 0 : 2,
+            pointHoverRadius: 4,
+            fill: false,
+            cubicInterpolationMode: 'monotone' as const,
+          },
+        ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { intersect: false, mode: 'index' as const },
         plugins: {
-          legend: { display: false },
+          legend: { labels: { color: '#ccc', boxWidth: 12, font: { size: 11 } } },
           tooltip: darkTooltip,
         },
-        scales: {
-          x: darkScaleX,
-          y: {
-            ...darkScaleY,
-            ticks: { ...darkScaleY.ticks, stepSize: 1 },
-          },
-        },
+        scales: { x: darkScaleX, y: darkScaleY },
       },
     });
+
+    // Spectrum on combined engagement signal (likes + replies + reposts)
+    if (filtered.length >= 8) {
+      const combined = filtered.map(d => d.likes + d.replies + d.reposts);
+      const spectrum = computeSpectrum(combined);
+      const peaks = topPeaks(spectrum, 2);
+      const filteredSpectrum = spectrum.filter(s => parseFloat(s.period) <= 60);
+
+      engagementSpectrumChart = new Chart(engagementSpectrumCanvas, {
+        type: 'bar',
+        data: {
+          labels: filteredSpectrum.map(s => s.period),
+          datasets: [{
+            label: 'Magnitude',
+            data: filteredSpectrum.map(s => s.magnitude),
+            backgroundColor: 'rgba(244,114,182,0.6)',
+            borderColor: '#f472b6',
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' as const },
+          plugins: { legend: { display: false }, tooltip: darkTooltip },
+          scales: {
+            x: { ...darkScaleX, title: { display: true, text: 'period (days)', color: '#888', font: { size: 11 } } },
+            y: darkScaleY,
+          },
+        },
+        plugins: [peakAnnotationPlugin(peaks, '#f59e0b')],
+      });
+    }
   }
+
+  // ── Chart 3: Posting Cadence + Spectrum ────────────────────────────
 
   async function rebuildCadenceChart() {
     await tick();
     cadenceChart?.destroy();
+    cadenceSpectrumChart?.destroy();
     const filtered = filterPostsByRange(allPosts, cadenceRange);
-    const daily = postsToDaily(filtered);
-    if (daily.length < 8) {
-      cadenceChart = null;
-      return;
-    }
-    const postSignal = daily.map(d => d.posts);
-    const spectrum = computeSpectrum(postSignal);
-    const peaks = topPeaks(spectrum, 2);
-    const filteredSpectrum = spectrum.filter(s => parseFloat(s.period) <= 60);
+    const cadence = postsToCadence(filtered);
+    showCadenceSpectrum = cadence.length >= 8;
+    if (cadence.length < 2) { cadenceChart = null; cadenceSpectrumChart = null; return; }
+
+    const signal = cadence.map(d => d.posts);
+    const smoothed = computeSmoothed(signal);
 
     cadenceChart = new Chart(cadenceCanvas, {
       type: 'bar',
       data: {
-        labels: filteredSpectrum.map(s => s.period),
-        datasets: [{
-          label: 'Magnitude',
-          data: filteredSpectrum.map(s => s.magnitude),
-          backgroundColor: 'rgba(67,99,216,0.6)',
-          borderColor: '#4363d8',
-          borderWidth: 1,
-        }],
+        labels: cadence.map(d => formatDate(d.date)),
+        datasets: [
+          {
+            label: 'Posts',
+            data: signal,
+            backgroundColor: 'rgba(67,99,216,0.6)',
+            borderColor: '#4363d8',
+            borderWidth: 1,
+          },
+          {
+            label: 'Trend',
+            data: smoothed,
+            type: 'line',
+            borderColor: '#f59e0b',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            fill: false,
+            cubicInterpolationMode: 'monotone' as const,
+          },
+        ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { intersect: false, mode: 'index' as const },
         plugins: {
-          legend: { display: false },
+          legend: { labels: { color: '#ccc', boxWidth: 12, font: { size: 11 } } },
           tooltip: darkTooltip,
         },
         scales: {
-          x: {
-            ...darkScaleX,
-            title: { display: true, text: 'period (days)', color: '#888', font: { size: 11 } },
-          },
-          y: darkScaleY,
+          x: darkScaleX,
+          y: { ...darkScaleY, ticks: { ...darkScaleY.ticks, stepSize: 1 } },
         },
       },
-      plugins: [peakAnnotationPlugin(peaks, '#f59e0b')],
     });
+
+    // Spectrum
+    if (cadence.length >= 8) {
+      const spectrum = computeSpectrum(signal);
+      const peaks = topPeaks(spectrum, 2);
+      const filteredSpectrum = spectrum.filter(s => parseFloat(s.period) <= 60);
+
+      cadenceSpectrumChart = new Chart(cadenceSpectrumCanvas, {
+        type: 'bar',
+        data: {
+          labels: filteredSpectrum.map(s => s.period),
+          datasets: [{
+            label: 'Magnitude',
+            data: filteredSpectrum.map(s => s.magnitude),
+            backgroundColor: 'rgba(67,99,216,0.6)',
+            borderColor: '#4363d8',
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' as const },
+          plugins: { legend: { display: false }, tooltip: darkTooltip },
+          scales: {
+            x: { ...darkScaleX, title: { display: true, text: 'period (days)', color: '#888', font: { size: 11 } } },
+            y: darkScaleY,
+          },
+        },
+        plugins: [peakAnnotationPlugin(peaks, '#f59e0b')],
+      });
+    }
   }
+
+  // ── Chart 4: Hourly Distribution (unchanged logic) ────────────────
 
   async function rebuildHourlyChart() {
     await tick();
@@ -328,50 +435,49 @@
         responsive: true,
         maintainAspectRatio: false,
         interaction: { intersect: false, mode: 'index' as const },
-        plugins: {
-          legend: { display: false },
-          tooltip: darkTooltip,
-        },
+        plugins: { legend: { display: false }, tooltip: darkTooltip },
         scales: {
           x: { ticks: { color: '#666', maxRotation: 0, font: { size: 11 }, maxTicksLimit: 24 }, grid: { color: 'rgba(255,255,255,0.04)' } },
-          y: {
-            ...darkScaleY,
-            ticks: { ...darkScaleY.ticks, stepSize: 1 },
-          },
+          y: { ...darkScaleY, ticks: { ...darkScaleY.ticks, stepSize: 1 } },
         },
       },
     });
   }
 
+  // ── Init ──────────────────────────────────────────────────────────
+
   onMount(async () => {
     try {
-      allPosts = await api.getPosts();
-      const allDaily = postsToDaily(allPosts);
+      [allViews, allDeltas, allPosts] = await Promise.all([
+        api.getViews(),
+        api.getEngagementDailyDeltas(),
+        api.getPosts(),
+      ]);
 
-      totalLikes = allDaily.reduce((s, d) => s + d.likes, 0);
-      const totalPostsCount = allDaily.reduce((s, d) => s + d.posts, 0);
-      avgPostsPerDay = allDaily.length > 0 ? (totalPostsCount / allDaily.length).toFixed(1) : '0';
+      // Stats ribbon
+      totalViews = allViews.reduce((s, d) => s + d.views, 0);
+      const allCadence = postsToCadence(allPosts);
+      const totalPostsCount = allCadence.reduce((s, d) => s + d.posts, 0);
+      avgPostsPerDay = allCadence.length > 0 ? (totalPostsCount / allCadence.length).toFixed(1) : '0';
 
-      hasEnoughData = allDaily.length >= 8;
+      hasEnoughData = allViews.length >= 8 || allCadence.length >= 8;
 
       if (hasEnoughData) {
-        const likeSignal = allDaily.map(d => d.likes);
-        const postSignal = allDaily.map(d => d.posts);
-
-        const allLikeSpectrum = computeSpectrum(likeSignal);
-        const allCadenceSpectrum = computeSpectrum(postSignal);
-
-        const engPeaks = topPeaks(allLikeSpectrum, 1);
-        dominantEngagement = engPeaks.length > 0 ? `${engPeaks[0].period}d` : '—';
-
-        const cadPeaks = topPeaks(allCadenceSpectrum, 1);
-        dominantCadence = cadPeaks.length > 0 ? `${cadPeaks[0].period}d` : '—';
+        if (allViews.length >= 8) {
+          const viewsSpectrum = computeSpectrum(allViews.map(d => d.views));
+          const viewsPeaks = topPeaks(viewsSpectrum, 1);
+          dominantViewsCycle = viewsPeaks.length > 0 ? `${viewsPeaks[0].period}d` : '—';
+        }
+        if (allCadence.length >= 8) {
+          const cadenceSpectrum = computeSpectrum(allCadence.map(d => d.posts));
+          const cadPeaks = topPeaks(cadenceSpectrum, 1);
+          dominantCadenceCycle = cadPeaks.length > 0 ? `${cadPeaks[0].period}d` : '—';
+        }
 
         loading = false;
         await Promise.all([
-          rebuildLikesChart(),
-          rebuildSpectrumChart(),
-          rebuildPostsChart(),
+          rebuildViewsChart(),
+          rebuildEngagementChart(),
           rebuildCadenceChart(),
           rebuildHourlyChart(),
         ]);
@@ -384,14 +490,15 @@
   });
 
   onDestroy(() => {
-    likesChart?.destroy();
-    spectrumChart?.destroy();
-    postsChart?.destroy();
+    viewsChart?.destroy();
+    viewsSpectrumChart?.destroy();
+    engagementChart?.destroy();
+    engagementSpectrumChart?.destroy();
     cadenceChart?.destroy();
+    cadenceSpectrumChart?.destroy();
     hourlyChart?.destroy();
   });
 
-  // Hourly bucket stats
   function bucketCount(from: number, to: number): number {
     return hourly.slice(from, to + 1).reduce((s, h) => s + h.count, 0);
   }
@@ -403,21 +510,21 @@
   {:else if error}
     <div class="status error">{error}</div>
   {:else if !hasEnoughData}
-    <div class="status">Not enough data for Fourier analysis (need at least 8 days of posts).</div>
+    <div class="status">Not enough data for Fourier analysis (need at least 8 days).</div>
   {:else}
     <!-- Stats Ribbon -->
     <div class="ribbon">
       <div class="kpi">
-        <span class="kpi-label">Engagement Cycle</span>
-        <span class="kpi-value">{dominantEngagement}</span>
+        <span class="kpi-label">Views Cycle</span>
+        <span class="kpi-value">{dominantViewsCycle}</span>
       </div>
       <div class="kpi">
         <span class="kpi-label">Posting Cycle</span>
-        <span class="kpi-value">{dominantCadence}</span>
+        <span class="kpi-value">{dominantCadenceCycle}</span>
       </div>
       <div class="kpi">
-        <span class="kpi-label">Total Likes</span>
-        <span class="kpi-value">{totalLikes.toLocaleString()}</span>
+        <span class="kpi-label">Total Views</span>
+        <span class="kpi-value">{totalViews.toLocaleString()}</span>
       </div>
       <div class="kpi">
         <span class="kpi-label">Avg Posts/Day</span>
@@ -427,42 +534,42 @@
 
     <!-- Chart Grid -->
     <div class="grid">
+      <!-- Daily Views + Spectrum -->
       <div class="chart-card">
         <div class="chart-header">
-          <h3>Daily Likes</h3>
-          <select class="range-select" bind:value={likesRange} onchange={() => rebuildLikesChart()}>
+          <h3>Daily Views</h3>
+          <select class="range-select" bind:value={viewsRange} onchange={() => rebuildViewsChart()}>
             {#each timeRanges as range}
               <option value={range.value}>{range.label}</option>
             {/each}
           </select>
         </div>
-        <div class="chart-wrap"><canvas bind:this={likesCanvas}></canvas></div>
+        <div class="chart-wrap"><canvas bind:this={viewsCanvas}></canvas></div>
+        {#if showViewsSpectrum}
+          <div class="spectrum-wrap"><canvas bind:this={viewsSpectrumCanvas}></canvas></div>
+        {/if}
       </div>
+
+      <!-- Engagement Velocity + Spectrum -->
       <div class="chart-card">
         <div class="chart-header">
-          <h3>Engagement Spectrum</h3>
-          <select class="range-select" bind:value={spectrumRange} onchange={() => rebuildSpectrumChart()}>
+          <h3>Engagement Velocity</h3>
+          <select class="range-select" bind:value={engagementRange} onchange={() => rebuildEngagementChart()}>
             {#each timeRanges as range}
               <option value={range.value}>{range.label}</option>
             {/each}
           </select>
         </div>
-        <div class="chart-wrap"><canvas bind:this={spectrumCanvas}></canvas></div>
+        <div class="chart-wrap"><canvas bind:this={engagementCanvas}></canvas></div>
+        {#if showEngagementSpectrum}
+          <div class="spectrum-wrap"><canvas bind:this={engagementSpectrumCanvas}></canvas></div>
+        {/if}
       </div>
-      <div class="chart-card">
+
+      <!-- Posting Cadence + Spectrum -->
+      <div class="chart-card full-width">
         <div class="chart-header">
-          <h3>Posts per Day</h3>
-          <select class="range-select" bind:value={postsRange} onchange={() => rebuildPostsChart()}>
-            {#each timeRanges as range}
-              <option value={range.value}>{range.label}</option>
-            {/each}
-          </select>
-        </div>
-        <div class="chart-wrap"><canvas bind:this={postsCanvas}></canvas></div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-header">
-          <h3>Cadence Spectrum</h3>
+          <h3>Posting Cadence</h3>
           <select class="range-select" bind:value={cadenceRange} onchange={() => rebuildCadenceChart()}>
             {#each timeRanges as range}
               <option value={range.value}>{range.label}</option>
@@ -470,7 +577,12 @@
           </select>
         </div>
         <div class="chart-wrap"><canvas bind:this={cadenceCanvas}></canvas></div>
+        {#if showCadenceSpectrum}
+          <div class="spectrum-wrap"><canvas bind:this={cadenceSpectrumCanvas}></canvas></div>
+        {/if}
       </div>
+
+      <!-- Hourly Distribution (full width) -->
       <div class="chart-card full-width">
         <div class="chart-header">
           <h3>Posting Hour Distribution</h3>
@@ -482,8 +594,8 @@
         </div>
         <div class="chart-wrap"><canvas bind:this={hourlyCanvas}></canvas></div>
         <div class="hour-stats">
-          <span>Morning (6–11): <strong>{bucketCount(6, 11)}</strong></span>
-          <span>Evening (18–23): <strong>{bucketCount(18, 23)}</strong></span>
+          <span>Morning (6-11): <strong>{bucketCount(6, 11)}</strong></span>
+          <span>Evening (18-23): <strong>{bucketCount(18, 23)}</strong></span>
           <span>Other: <strong>{bucketCount(0, 5) + bucketCount(12, 17)}</strong></span>
         </div>
       </div>
@@ -580,6 +692,13 @@
   .chart-wrap {
     position: relative;
     height: 260px;
+  }
+  .spectrum-wrap {
+    position: relative;
+    height: 160px;
+    margin-top: 0.75rem;
+    border-top: 1px solid #222;
+    padding-top: 0.75rem;
   }
 
   /* Hourly stats */
