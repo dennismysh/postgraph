@@ -87,17 +87,24 @@ pub async fn get_debug_posts(
         .map(|dt| dt.with_timezone(&Utc))
         .unwrap_or_else(|| Utc::now() - chrono::Duration::days(1));
 
-    let rows: Vec<DebugPost> = sqlx::query_as::<_, (
-        String,
-        Option<String>,
-        DateTime<Utc>,
-        i32, i32, i32, i32, i32,
-        DateTime<Utc>,
-        Option<f32>,
-        Option<String>,
-        Option<String>,
-        Option<DateTime<Utc>>,
-    )>(
+    let rows: Vec<DebugPost> = sqlx::query_as::<
+        _,
+        (
+            String,
+            Option<String>,
+            DateTime<Utc>,
+            i32,
+            i32,
+            i32,
+            i32,
+            i32,
+            DateTime<Utc>,
+            Option<f32>,
+            Option<String>,
+            Option<String>,
+            Option<DateTime<Utc>>,
+        ),
+    >(
         r#"SELECT p.id, LEFT(p.text, 120) AS text_preview,
                   p.timestamp, p.views, p.likes, p.replies_count, p.reposts, p.quotes,
                   p.synced_at,
@@ -120,8 +127,8 @@ pub async fn get_debug_posts(
     .await
     .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
     .into_iter()
-    .map(|(id, text_preview, timestamp, views, likes, replies_count, reposts, quotes, synced_at, sentiment, intent, subject, last_captured_at)| {
-        DebugPost {
+    .map(
+        |(
             id,
             text_preview,
             timestamp,
@@ -135,8 +142,24 @@ pub async fn get_debug_posts(
             intent,
             subject,
             last_captured_at,
-        }
-    })
+        )| {
+            DebugPost {
+                id,
+                text_preview,
+                timestamp,
+                views,
+                likes,
+                replies_count,
+                reposts,
+                quotes,
+                synced_at,
+                sentiment,
+                intent,
+                subject,
+                last_captured_at,
+            }
+        },
+    )
     .collect();
 
     Ok(Json(rows))
