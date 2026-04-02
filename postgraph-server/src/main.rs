@@ -245,6 +245,7 @@ async fn main() {
 
     let api_routes = Router::new()
         .route("/api/posts", get(routes::posts::list_posts))
+        .route("/api/posts/debug", get(routes::posts::get_debug_posts))
         .route("/api/posts/{id}", get(routes::posts::get_post))
         .route("/api/graph", get(routes::graph::get_graph))
         .route("/api/analytics", get(routes::analytics::get_analytics))
