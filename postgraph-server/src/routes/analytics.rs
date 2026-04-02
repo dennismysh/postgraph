@@ -358,13 +358,15 @@ pub async fn get_engagement_daily_deltas(
 
     let points: Vec<DailyEngagementDelta> = rows
         .into_iter()
-        .map(|(date, likes, replies, reposts, quotes)| DailyEngagementDelta {
-            date,
-            likes,
-            replies,
-            reposts,
-            quotes,
-        })
+        .map(
+            |(date, likes, replies, reposts, quotes)| DailyEngagementDelta {
+                date,
+                likes,
+                replies,
+                reposts,
+                quotes,
+            },
+        )
         .collect();
 
     Ok(Json(points))
