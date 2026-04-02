@@ -158,6 +158,14 @@ export interface PostEngagementPoint {
   quotes: number;
 }
 
+export interface DailyEngagementDelta {
+  date: string;
+  likes: number;
+  replies: number;
+  reposts: number;
+  quotes: number;
+}
+
 export interface HeatmapDay {
   date: string;
   posts: number;
@@ -257,6 +265,12 @@ export const api = {
     if (grouping) params.set('grouping', grouping);
     const qs = params.toString();
     return fetchApi<EngagementPoint[]>(`/api/analytics/engagement${qs ? `?${qs}` : ''}`);
+  },
+  getEngagementDailyDeltas: (since?: string) => {
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    const qs = params.toString();
+    return fetchApi<DailyEngagementDelta[]>(`/api/analytics/engagement/daily-deltas${qs ? `?${qs}` : ''}`);
   },
   getHistograms: (since?: string) => {
     const params = new URLSearchParams();
