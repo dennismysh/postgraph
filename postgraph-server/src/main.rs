@@ -138,6 +138,10 @@ async fn main() {
             if let Err(e) = sync::sync_post_metrics(&bg_state.pool, &bg_state.threads, None).await {
                 tracing::error!("Background metrics refresh failed: {e}");
             }
+            // Task 3: Refresh daily views (idempotent upsert, fetches last 7 days)
+            if let Err(e) = sync::sync_daily_views(&bg_state.pool, &bg_state.threads).await {
+                tracing::error!("Background daily views sync failed: {e}");
+            }
             // Analysis + edge computation
             let mut consecutive_failures = 0;
             loop {
