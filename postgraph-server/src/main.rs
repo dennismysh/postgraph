@@ -263,6 +263,18 @@ async fn main() {
             get(routes::analytics::get_views_cumulative),
         )
         .route(
+            "/api/analytics/views/per-post",
+            get(routes::analytics::get_views_per_post),
+        )
+        .route(
+            "/api/analytics/views/per-post/cumulative",
+            get(routes::analytics::get_views_per_post_cumulative),
+        )
+        .route(
+            "/api/analytics/views/per-post/range-sums",
+            get(routes::analytics::get_views_per_post_range_sums),
+        )
+        .route(
             "/api/analytics/heatmap",
             get(routes::analytics::get_heatmap),
         )

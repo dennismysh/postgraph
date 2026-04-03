@@ -372,6 +372,187 @@ pub async fn get_engagement_daily_deltas(
     Ok(Json(points))
 }
 
+// ── Per-Post Views (from engagement_snapshots) ─────────────────────
+
+pub async fn get_views_per_post(
+    State(state): State<AppState>,
+    Query(query): Query<ViewsQuery>,
+) -> Result<Json<Vec<ViewsPoint>>, axum::http::StatusCode> {
+    let since = query
+        .since
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.date_naive());
+
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        r#"WITH daily_snapshots AS (
+               SELECT DISTINCT ON (post_id, captured_at::date)
+                   post_id,
+                   captured_at::date AS capture_date,
+                   views
+               FROM engagement_snapshots
+               ORDER BY post_id, captured_at::date, captured_at DESC
+           ),
+           deltas AS (
+               SELECT
+                   capture_date,
+                   views - LAG(views) OVER (PARTITION BY post_id ORDER BY capture_date) AS d_views
+               FROM daily_snapshots
+           )
+           SELECT
+               capture_date::text AS date,
+               COALESCE(SUM(d_views), 0)::bigint AS views
+           FROM deltas
+           WHERE capture_date IS NOT NULL
+             AND ($1::date IS NULL OR capture_date >= $1)
+           GROUP BY capture_date
+           ORDER BY capture_date"#,
+    )
+    .bind(since)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let points: Vec<ViewsPoint> = rows
+        .into_iter()
+        .map(|(date, views)| ViewsPoint { date, views })
+        .collect();
+
+    Ok(Json(points))
+}
+
+pub async fn get_views_per_post_cumulative(
+    State(state): State<AppState>,
+    Query(query): Query<ViewsQuery>,
+) -> Result<Json<Vec<CumulativeViewsPoint>>, axum::http::StatusCode> {
+    let since = query
+        .since
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.date_naive());
+
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        r#"WITH daily_snapshots AS (
+               SELECT DISTINCT ON (post_id, captured_at::date)
+                   post_id,
+                   captured_at::date AS capture_date,
+                   views
+               FROM engagement_snapshots
+               ORDER BY post_id, captured_at::date, captured_at DESC
+           ),
+           deltas AS (
+               SELECT
+                   capture_date,
+                   views - LAG(views) OVER (PARTITION BY post_id ORDER BY capture_date) AS d_views
+               FROM daily_snapshots
+           ),
+           daily AS (
+               SELECT
+                   capture_date,
+                   COALESCE(SUM(d_views), 0)::bigint AS views
+               FROM deltas
+               WHERE capture_date IS NOT NULL
+                 AND ($1::date IS NULL OR capture_date >= $1)
+               GROUP BY capture_date
+           )
+           SELECT
+               capture_date::text AS date,
+               SUM(views) OVER (ORDER BY capture_date)::bigint AS cumulative_views
+           FROM daily
+           ORDER BY capture_date"#,
+    )
+    .bind(since)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let points: Vec<CumulativeViewsPoint> = rows
+        .into_iter()
+        .map(|(date, cumulative_views)| CumulativeViewsPoint {
+            date,
+            cumulative_views,
+        })
+        .collect();
+
+    Ok(Json(points))
+}
+
+pub async fn get_views_per_post_range_sums(
+    State(state): State<AppState>,
+) -> Result<Json<ViewsRangeSums>, axum::http::StatusCode> {
+    let now = chrono::Utc::now().date_naive();
+    let b365 = now - chrono::Duration::days(365);
+    let b270 = now - chrono::Duration::days(270);
+    let b180 = now - chrono::Duration::days(180);
+    let b90 = now - chrono::Duration::days(90);
+    let b60 = now - chrono::Duration::days(60);
+    let b30 = now - chrono::Duration::days(30);
+    let b14 = now - chrono::Duration::days(14);
+    let b7 = now - chrono::Duration::days(7);
+    let b1 = now - chrono::Duration::days(1);
+
+    let row: (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"WITH daily_snapshots AS (
+               SELECT DISTINCT ON (post_id, captured_at::date)
+                   post_id,
+                   captured_at::date AS capture_date,
+                   views
+               FROM engagement_snapshots
+               ORDER BY post_id, captured_at::date, captured_at DESC
+           ),
+           deltas AS (
+               SELECT
+                   capture_date,
+                   views - LAG(views) OVER (PARTITION BY post_id ORDER BY capture_date) AS d_views
+               FROM daily_snapshots
+           ),
+           daily AS (
+               SELECT capture_date, COALESCE(SUM(d_views), 0)::bigint AS views
+               FROM deltas
+               WHERE capture_date IS NOT NULL
+               GROUP BY capture_date
+           )
+           SELECT
+               COALESCE(SUM(views), 0)::bigint,
+               COALESCE(SUM(CASE WHEN capture_date >= $1 THEN views END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN capture_date >= $2 THEN views END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN capture_date >= $3 THEN views END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN capture_date >= $4 THEN views END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN capture_date >= $5 THEN views END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN capture_date >= $6 THEN views END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN capture_date >= $7 THEN views END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN capture_date >= $8 THEN views END), 0)::bigint,
+               COALESCE(SUM(CASE WHEN capture_date >= $9 THEN views END), 0)::bigint
+           FROM daily"#,
+    )
+    .bind(b365)
+    .bind(b270)
+    .bind(b180)
+    .bind(b90)
+    .bind(b60)
+    .bind(b30)
+    .bind(b14)
+    .bind(b7)
+    .bind(b1)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut sums = HashMap::new();
+    sums.insert("all".to_string(), row.0);
+    sums.insert("365d".to_string(), row.1);
+    sums.insert("270d".to_string(), row.2);
+    sums.insert("180d".to_string(), row.3);
+    sums.insert("90d".to_string(), row.4);
+    sums.insert("60d".to_string(), row.5);
+    sums.insert("30d".to_string(), row.6);
+    sums.insert("14d".to_string(), row.7);
+    sums.insert("7d".to_string(), row.8);
+    sums.insert("24h".to_string(), row.9);
+
+    Ok(Json(ViewsRangeSums { sums }))
+}
+
 // ── Analytics Summary ───────────────────────────────────────────────
 
 pub async fn get_analytics(
