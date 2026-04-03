@@ -319,4 +319,17 @@ export const api = {
     const qs = params.toString();
     return fetchApi(`/api/analytics/heatmap/views${qs ? `?${qs}` : ''}`);
   },
+  getViewsPerPost: (since?: string) => {
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    const qs = params.toString();
+    return fetchApi<ViewsPoint[]>(`/api/analytics/views/per-post${qs ? `?${qs}` : ''}`);
+  },
+  getViewsPerPostCumulative: (since?: string): Promise<CumulativeViewsPoint[]> => {
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    const qs = params.toString();
+    return fetchApi(`/api/analytics/views/per-post/cumulative${qs ? `?${qs}` : ''}`);
+  },
+  getViewsPerPostRangeSums: () => fetchApi<ViewsRangeSums>('/api/analytics/views/per-post/range-sums'),
 };
