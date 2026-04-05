@@ -233,6 +233,17 @@ async fn main() {
             if let Err(e) = graph::compute_subject_edges(&nightly_state.pool).await {
                 tracing::error!("Nightly edge computation failed: {e}");
             }
+            // Generate insights report
+            match insights::generate_report(
+                &nightly_state.pool,
+                &nightly_state.mercury,
+                "nightly",
+            )
+            .await
+            {
+                Ok(r) => info!("Nightly insights report generated: {}", r.id),
+                Err(e) => tracing::error!("Nightly insights generation failed: {e}"),
+            }
             info!("Nightly sync complete");
         }
     });
@@ -309,6 +320,8 @@ async fn main() {
             "/api/subjects/{id}/posts",
             get(routes::subjects::get_subject_posts),
         )
+        .route("/api/insights/latest", get(routes::insights::get_latest))
+        .route("/api/insights/generate", post(routes::insights::generate))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,
