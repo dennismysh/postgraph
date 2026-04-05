@@ -1,5 +1,5 @@
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use serde::Serialize;
 
 use crate::insights;
@@ -26,7 +26,9 @@ pub async fn get_latest(
         .map_err(|e| {
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(InsightsError { error: e.to_string() }),
+                Json(InsightsError {
+                    error: e.to_string(),
+                }),
             )
         })?;
 
@@ -39,7 +41,9 @@ pub async fn get_latest(
         })),
         None => Err((
             axum::http::StatusCode::NOT_FOUND,
-            Json(InsightsError { error: "No insights report generated yet".to_string() }),
+            Json(InsightsError {
+                error: "No insights report generated yet".to_string(),
+            }),
         )),
     }
 }
@@ -52,7 +56,9 @@ pub async fn generate(
         .map_err(|e| {
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(InsightsError { error: e.to_string() }),
+                Json(InsightsError {
+                    error: e.to_string(),
+                }),
             )
         })?;
 

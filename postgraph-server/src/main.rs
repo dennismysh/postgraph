@@ -234,12 +234,8 @@ async fn main() {
                 tracing::error!("Nightly edge computation failed: {e}");
             }
             // Generate insights report
-            match insights::generate_report(
-                &nightly_state.pool,
-                &nightly_state.mercury,
-                "nightly",
-            )
-            .await
+            match insights::generate_report(&nightly_state.pool, &nightly_state.mercury, "nightly")
+                .await
             {
                 Ok(r) => info!("Nightly insights report generated: {}", r.id),
                 Err(e) => tracing::error!("Nightly insights generation failed: {e}"),

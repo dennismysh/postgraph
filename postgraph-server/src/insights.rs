@@ -170,7 +170,11 @@ pub async fn compute_context(pool: &PgPool) -> Result<InsightsContext, AppError>
             )| {
                 PostSummary {
                     id,
-                    text: text.unwrap_or_default().chars().take(200).collect::<String>(),
+                    text: text
+                        .unwrap_or_default()
+                        .chars()
+                        .take(200)
+                        .collect::<String>(),
                     permalink,
                     timestamp,
                     views,
@@ -307,11 +311,12 @@ pub async fn compute_context(pool: &PgPool) -> Result<InsightsContext, AppError>
     .fetch_one(pool)
     .await?;
 
-    let recent_count_row: (i64,) =
-        sqlx::query_as(r#"SELECT COUNT(*) FROM posts WHERE timestamp >= $1 AND analyzed_at IS NOT NULL"#)
-            .bind(window_start)
-            .fetch_one(pool)
-            .await?;
+    let recent_count_row: (i64,) = sqlx::query_as(
+        r#"SELECT COUNT(*) FROM posts WHERE timestamp >= $1 AND analyzed_at IS NOT NULL"#,
+    )
+    .bind(window_start)
+    .fetch_one(pool)
+    .await?;
 
     let alltime_count = freq_row.0;
     let oldest = freq_row.1;
