@@ -3,11 +3,11 @@
   import { api } from '$lib/api';
   import type { InsightsResponse, Post } from '$lib/api';
 
-  let report: InsightsResponse | null = null;
-  let posts: Post[] = [];
-  let loading = true;
-  let regenerating = false;
-  let error = '';
+  let report: InsightsResponse | null = $state(null);
+  let posts: Post[] = $state([]);
+  let loading = $state(true);
+  let regenerating = $state(false);
+  let error = $state('');
 
   const SECTION_STYLES: Record<string, { color: string; icon: string; border: string }> = {
     working: { color: '#4ade80', icon: '●', border: '#1a3a1a' },
