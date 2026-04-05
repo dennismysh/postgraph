@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::insights::{InsightsContext, InsightsReport};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -189,5 +190,129 @@ Respond with ONLY valid JSON:
         })?;
 
         Ok(analysis.posts)
+    }
+
+    pub async fn generate_insights(
+        &self,
+        context: &InsightsContext,
+    ) -> Result<InsightsReport, AppError> {
+        let context_json = serde_json::to_string_pretty(context)?;
+
+        let system_prompt = r#"You are a candid friend who happens to be a world-class content strategist. You've just reviewed 30 days of someone's Threads posts along with their engagement and view data. You care about this person's growth and you're not going to sugarcoat things — but you're also not harsh. You're direct, specific, and grounded in the numbers.
+
+Respond with ONLY valid JSON matching this exact structure:
+{
+  "headline": "<one punchy sentence that captures the most important thing to know right now>",
+  "sections": [
+    {
+      "key": "working",
+      "title": "What's Working",
+      "summary": "<2-3 sentences on patterns driving results>",
+      "items": [
+        {
+          "observation": "<specific, data-grounded observation>",
+          "cited_posts": ["<post id>", ...],
+          "tone": "positive"
+        }
+      ]
+    },
+    {
+      "key": "not_working",
+      "title": "What's Not Working",
+      "summary": "<2-3 sentences on patterns that are underperforming>",
+      "items": [
+        {
+          "observation": "<specific, data-grounded observation>",
+          "cited_posts": ["<post id>", ...],
+          "tone": "critical"
+        }
+      ]
+    },
+    {
+      "key": "on_brand",
+      "title": "On Brand",
+      "summary": "<2-3 sentences on consistent voice and topics>",
+      "items": [
+        {
+          "observation": "<specific observation about voice, subject matter, or consistency>",
+          "cited_posts": ["<post id>", ...],
+          "tone": "neutral"
+        }
+      ]
+    },
+    {
+      "key": "off_pattern",
+      "title": "Off Pattern",
+      "summary": "<2-3 sentences on anomalies, experiments, or departures from the norm>",
+      "items": [
+        {
+          "observation": "<specific observation about outliers or experiments>",
+          "cited_posts": ["<post id>", ...],
+          "tone": "neutral"
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Each section must have 2-4 items.
+- cited_posts should reference actual post IDs from the provided context.
+- Be specific: cite numbers, subjects, intents. Avoid vague statements like "engagement is good".
+- The headline should be something a person would actually say out loud to a friend, not a corporate summary.
+- Do not wrap JSON in markdown code fences."#;
+
+        let request = ChatRequest {
+            model: "mercury-2".to_string(),
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: system_prompt.to_string(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: context_json,
+                },
+            ],
+            temperature: 0.5,
+        };
+
+        let resp = self
+            .client
+            .post(format!("{}/chat/completions", self.api_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::MercuryApi(body));
+        }
+
+        let chat_resp: ChatResponse = resp.json().await?;
+        let content = chat_resp
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+
+        // Strip markdown code fences if present
+        let json_str = content
+            .trim()
+            .strip_prefix("```json")
+            .or_else(|| content.trim().strip_prefix("```"))
+            .unwrap_or(content.trim())
+            .strip_suffix("```")
+            .unwrap_or(content.trim())
+            .trim();
+
+        let report: InsightsReport = serde_json::from_str(json_str).map_err(|e| {
+            AppError::MercuryApi(format!(
+                "Failed to parse insights response: {e}. Raw: {json_str}"
+            ))
+        })?;
+
+        Ok(report)
     }
 }
