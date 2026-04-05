@@ -10,6 +10,7 @@
       <a href="/" class:active={$page.url.pathname === '/'}>Graph</a>
       <a href="/analytics" class:active={$page.url.pathname === '/analytics'}>Analytics</a>
       <a href="/analytics-v2" class:active={$page.url.pathname === '/analytics-v2'}>V2</a>
+      <a href="/insights" class:active={$page.url.pathname === '/insights'}>Insights</a>
       <a href="/fourier" class:active={$page.url.pathname === '/fourier'}>ƒ(t)</a>
       <a href="/debug" class:active={$page.url.pathname === '/debug'}>Debug</a>
       <a href="/health" class:active={$page.url.pathname === '/health'}>Health</a>
