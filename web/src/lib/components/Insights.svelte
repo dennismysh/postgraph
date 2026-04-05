@@ -36,17 +36,22 @@
 
   async function loadReport() {
     try {
-      const [reportData, postsData] = await Promise.all([
-        api.getInsightsLatest().catch(() => null),
-        api.getPosts(),
-      ]);
-      report = reportData;
-      posts = postsData;
-    } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load insights';
-    } finally {
-      loading = false;
+      report = await api.getInsightsLatest();
+    } catch {
+      // No report yet (404) or backend error — show empty state
+      report = null;
     }
+
+    if (report) {
+      try {
+        posts = await api.getPosts();
+      } catch {
+        // Posts failed to load — cited links won't resolve, but report still shows
+        posts = [];
+      }
+    }
+
+    loading = false;
   }
 
   async function regenerate() {
