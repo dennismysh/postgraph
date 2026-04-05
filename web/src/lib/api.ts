@@ -75,6 +75,7 @@ export interface Post {
   id: string;
   text: string | null;
   timestamp: string;
+  permalink: string | null;
   views: number;
   likes: number;
   replies_count: number;
@@ -208,6 +209,31 @@ export interface HistogramResponse {
   views: HistogramBucket[];
 }
 
+export interface InsightsItem {
+  observation: string;
+  cited_posts: string[];
+  tone: 'positive' | 'negative' | 'neutral';
+}
+
+export interface InsightsSection {
+  key: string;
+  title: string;
+  summary: string;
+  items: InsightsItem[];
+}
+
+export interface InsightsReport {
+  headline: string;
+  sections: InsightsSection[];
+}
+
+export interface InsightsResponse {
+  id: string;
+  generated_at: string;
+  trigger_type: string;
+  report: InsightsReport;
+}
+
 export const api = {
   getGraph: (intent?: string, timeRange?: string) => {
     const params = new URLSearchParams();
@@ -332,4 +358,14 @@ export const api = {
     return fetchApi(`/api/analytics/views/per-post/cumulative${qs ? `?${qs}` : ''}`);
   },
   getViewsPerPostRangeSums: () => fetchApi<ViewsRangeSums>('/api/analytics/views/per-post/range-sums'),
+  getInsightsLatest: () => fetchApi<InsightsResponse>('/api/insights/latest'),
+  generateInsights: () => fetch('/api/insights/generate', {
+    method: 'POST',
+  }).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({ error: `Generate failed (${r.status})` }));
+      throw new Error(body.error ?? `Generate failed (${r.status})`);
+    }
+    return r.json() as Promise<InsightsResponse>;
+  }),
 };
