@@ -144,6 +144,7 @@ pub async fn compute_context(pool: &PgPool) -> Result<InsightsContext, AppError>
            LEFT JOIN intents i ON i.id = p.intent_id
            LEFT JOIN subjects s ON s.id = p.subject_id
            WHERE p.timestamp >= $1
+             AND p.analyzed_at IS NOT NULL
            ORDER BY p.timestamp DESC"#,
     )
     .bind(window_start)
@@ -169,7 +170,7 @@ pub async fn compute_context(pool: &PgPool) -> Result<InsightsContext, AppError>
             )| {
                 PostSummary {
                     id,
-                    text: text.unwrap_or_default(),
+                    text: text.unwrap_or_default().chars().take(200).collect::<String>(),
                     permalink,
                     timestamp,
                     views,
@@ -300,13 +301,14 @@ pub async fn compute_context(pool: &PgPool) -> Result<InsightsContext, AppError>
                COUNT(*),
                MIN(timestamp),
                MAX(timestamp)
-           FROM posts"#,
+           FROM posts
+           WHERE analyzed_at IS NOT NULL"#,
     )
     .fetch_one(pool)
     .await?;
 
     let recent_count_row: (i64,) =
-        sqlx::query_as(r#"SELECT COUNT(*) FROM posts WHERE timestamp >= $1"#)
+        sqlx::query_as(r#"SELECT COUNT(*) FROM posts WHERE timestamp >= $1 AND analyzed_at IS NOT NULL"#)
             .bind(window_start)
             .fetch_one(pool)
             .await?;

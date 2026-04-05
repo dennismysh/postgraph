@@ -224,7 +224,7 @@ Respond with ONLY valid JSON matching this exact structure:
         {
           "observation": "<specific, data-grounded observation>",
           "cited_posts": ["<post id>", ...],
-          "tone": "critical"
+          "tone": "negative"
         }
       ]
     },
@@ -271,7 +271,7 @@ Rules:
                 },
                 ChatMessage {
                     role: "user".to_string(),
-                    content: context_json,
+                    content: format!("Here is the analytics data for the last 30 days:\n\n{context_json}"),
                 },
             ],
             temperature: 0.5,
