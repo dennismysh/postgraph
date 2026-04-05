@@ -34,19 +34,24 @@
     return text.slice(0, len).trimEnd() + '…';
   }
 
+  function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Timeout')), ms)),
+    ]);
+  }
+
   async function loadReport() {
     try {
-      report = await api.getInsightsLatest();
+      report = await fetchWithTimeout(api.getInsightsLatest(), 10000);
     } catch {
-      // No report yet (404) or backend error — show empty state
       report = null;
     }
 
     if (report) {
       try {
-        posts = await api.getPosts();
+        posts = await fetchWithTimeout(api.getPosts(), 10000);
       } catch {
-        // Posts failed to load — cited links won't resolve, but report still shows
         posts = [];
       }
     }
