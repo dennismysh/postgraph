@@ -3,6 +3,7 @@ mod auth;
 mod db;
 mod error;
 mod graph;
+mod insights;
 mod mercury;
 mod routes;
 mod state;
