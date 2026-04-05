@@ -2,6 +2,7 @@ pub mod analytics;
 pub mod analyze;
 pub mod graph;
 pub mod health;
+pub mod insights;
 pub mod posts;
 pub mod reanalyze;
 pub mod subjects;
