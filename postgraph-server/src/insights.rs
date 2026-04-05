@@ -208,11 +208,11 @@ pub async fn compute_context(pool: &PgPool) -> Result<InsightsContext, AppError>
         r#"SELECT
                s.name,
                COUNT(*) FILTER (WHERE p.timestamp >= $1)                                                 AS recent_post_count,
-               COALESCE(AVG(p.views) FILTER (WHERE p.timestamp >= $1), 0.0)                             AS recent_avg_views,
-               COALESCE(AVG(p.likes + p.replies_count + p.reposts + p.quotes) FILTER (WHERE p.timestamp >= $1), 0.0) AS recent_avg_engagement,
+               COALESCE(AVG(p.views::float8) FILTER (WHERE p.timestamp >= $1), 0.0)                     AS recent_avg_views,
+               COALESCE(AVG((p.likes + p.replies_count + p.reposts + p.quotes)::float8) FILTER (WHERE p.timestamp >= $1), 0.0) AS recent_avg_engagement,
                COUNT(*)                                                                                   AS alltime_post_count,
-               COALESCE(AVG(p.views), 0.0)                                                               AS alltime_avg_views,
-               COALESCE(AVG(p.likes + p.replies_count + p.reposts + p.quotes), 0.0)                     AS alltime_avg_engagement
+               COALESCE(AVG(p.views::float8), 0.0)                                                       AS alltime_avg_views,
+               COALESCE(AVG((p.likes + p.replies_count + p.reposts + p.quotes)::float8), 0.0)           AS alltime_avg_engagement
            FROM posts p
            JOIN subjects s ON s.id = p.subject_id
            GROUP BY s.name
@@ -260,11 +260,11 @@ pub async fn compute_context(pool: &PgPool) -> Result<InsightsContext, AppError>
         r#"SELECT
                i.name,
                COUNT(*) FILTER (WHERE p.timestamp >= $1)                                                 AS recent_post_count,
-               COALESCE(AVG(p.views) FILTER (WHERE p.timestamp >= $1), 0.0)                             AS recent_avg_views,
-               COALESCE(AVG(p.likes + p.replies_count + p.reposts + p.quotes) FILTER (WHERE p.timestamp >= $1), 0.0) AS recent_avg_engagement,
+               COALESCE(AVG(p.views::float8) FILTER (WHERE p.timestamp >= $1), 0.0)                     AS recent_avg_views,
+               COALESCE(AVG((p.likes + p.replies_count + p.reposts + p.quotes)::float8) FILTER (WHERE p.timestamp >= $1), 0.0) AS recent_avg_engagement,
                COUNT(*)                                                                                   AS alltime_post_count,
-               COALESCE(AVG(p.views), 0.0)                                                               AS alltime_avg_views,
-               COALESCE(AVG(p.likes + p.replies_count + p.reposts + p.quotes), 0.0)                     AS alltime_avg_engagement
+               COALESCE(AVG(p.views::float8), 0.0)                                                       AS alltime_avg_views,
+               COALESCE(AVG((p.likes + p.replies_count + p.reposts + p.quotes)::float8), 0.0)           AS alltime_avg_engagement
            FROM posts p
            JOIN intents i ON i.id = p.intent_id
            GROUP BY i.name
@@ -341,8 +341,8 @@ pub async fn compute_context(pool: &PgPool) -> Result<InsightsContext, AppError>
     // ── Sentiment ────────────────────────────────────────────────────
     let sentiment_row: (Option<f64>, Option<f64>) = sqlx::query_as(
         r#"SELECT
-               AVG(sentiment) FILTER (WHERE timestamp >= $1),
-               AVG(sentiment)
+               AVG(sentiment::float8) FILTER (WHERE timestamp >= $1),
+               AVG(sentiment::float8)
            FROM posts
            WHERE sentiment IS NOT NULL"#,
     )
