@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { api } from '$lib/api';
   import type { EmotionsSummaryResponse, EmotionNarrativeResponse, Post } from '$lib/api';
   import { Chart, RadarController, RadialLinearScale, PointElement, LineElement, Filler, Tooltip } from 'chart.js';
@@ -153,8 +153,10 @@
   });
 
   $effect(() => {
-    if (summary && canvas) {
-      buildChart();
+    if (summary && !loading) {
+      tick().then(() => {
+        if (canvas) buildChart();
+      });
     }
   });
 </script>
