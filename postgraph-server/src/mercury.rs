@@ -52,6 +52,17 @@ struct AnalysisResponse {
     pub posts: Vec<AnalyzedPost>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ClassifiedEmotion {
+    pub post_id: String,
+    pub emotion: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EmotionClassificationResponse {
+    pub posts: Vec<ClassifiedEmotion>,
+}
+
 impl MercuryClient {
     pub fn new(api_key: String, api_url: String) -> Self {
         let client = Client::builder()
@@ -332,6 +343,80 @@ Rules:
         })?;
 
         Ok(report)
+    }
+
+    pub async fn classify_emotions(
+        &self,
+        posts: &[(String, String)],
+    ) -> Result<Vec<ClassifiedEmotion>, AppError> {
+        let posts_json: Vec<serde_json::Value> = posts
+            .iter()
+            .map(|(id, text)| serde_json::json!({"id": id, "text": text}))
+            .collect();
+        let posts_json_str = serde_json::to_string_pretty(&posts_json).unwrap_or_default();
+
+        let prompt = format!(
+            r#"Classify the dominant emotion of each social media post. Pick exactly one from this fixed list:
+- Vulnerable: openness, personal sharing, admitting uncertainty
+- Curious: questions, exploration, wonder
+- Playful: humor, wit, lightheartedness
+- Confident: strong opinions, assertions, expertise
+- Reflective: introspection, lessons learned, looking back
+- Frustrated: venting, complaints, friction
+- Provocative: hot takes, challenging norms, debate-starting
+
+Posts: {posts_json_str}
+
+Respond with ONLY valid JSON:
+{{"posts": [{{"post_id": "...", "emotion": "curious"}}]}}"#
+        );
+
+        let request = ChatRequest {
+            model: "mercury-2".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            }],
+            temperature: 0.3,
+        };
+
+        let resp = self
+            .client
+            .post(format!("{}/chat/completions", self.api_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::MercuryApi(body));
+        }
+
+        let chat_resp: ChatResponse = resp.json().await?;
+        let content = chat_resp
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+
+        let json_str = content
+            .trim()
+            .strip_prefix("```json")
+            .or_else(|| content.trim().strip_prefix("```"))
+            .unwrap_or(content.trim())
+            .strip_suffix("```")
+            .unwrap_or(content.trim())
+            .trim();
+
+        let result: EmotionClassificationResponse =
+            serde_json::from_str(json_str).map_err(|e| {
+                AppError::MercuryApi(format!(
+                    "Failed to parse emotion classification: {e}. Raw: {json_str}"
+                ))
+            })?;
+
+        Ok(result.posts)
     }
 
     pub async fn generate_emotion_narrative(

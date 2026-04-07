@@ -167,6 +167,76 @@ pub async fn generate_narrative(
     })
 }
 
+fn backfill_batch_size() -> i64 {
+    std::env::var("ANALYSIS_BATCH_SIZE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(16)
+}
+
+pub async fn backfill_emotions(
+    pool: &PgPool,
+    mercury: &MercuryClient,
+) -> Result<u32, AppError> {
+    let batch_size = backfill_batch_size();
+    let mut total_classified: u32 = 0;
+
+    loop {
+        let rows: Vec<(String, Option<String>)> = sqlx::query_as(
+            r#"SELECT id, text FROM posts
+               WHERE analyzed_at IS NOT NULL AND emotion IS NULL AND text IS NOT NULL
+               ORDER BY timestamp DESC
+               LIMIT $1"#,
+        )
+        .bind(batch_size)
+        .fetch_all(pool)
+        .await?;
+
+        if rows.is_empty() {
+            break;
+        }
+
+        let posts_for_llm: Vec<(String, String)> = rows
+            .into_iter()
+            .filter_map(|(id, text)| text.map(|t| (id, t)))
+            .collect();
+
+        if posts_for_llm.is_empty() {
+            break;
+        }
+
+        info!(
+            "Backfilling emotions for {} posts",
+            posts_for_llm.len()
+        );
+
+        let results = mercury.classify_emotions(&posts_for_llm).await?;
+
+        for result in &results {
+            let emotion = result.emotion.to_lowercase();
+            if EMOTIONS.contains(&emotion.as_str()) {
+                sqlx::query("UPDATE posts SET emotion = $1 WHERE id = $2")
+                    .bind(&emotion)
+                    .bind(&result.post_id)
+                    .execute(pool)
+                    .await?;
+                total_classified += 1;
+            } else {
+                tracing::warn!(
+                    "Mercury returned unknown emotion '{}' for post {}, skipping",
+                    result.emotion,
+                    result.post_id
+                );
+            }
+        }
+
+        info!("Backfill batch complete: {} classified so far", total_classified);
+    }
+
+    info!("Emotion backfill complete: {} total posts classified", total_classified);
+    Ok(total_classified)
+}
+
 pub async fn get_latest_narrative(pool: &PgPool) -> Result<Option<StoredNarrative>, AppError> {
     let row: Option<(uuid::Uuid, chrono::DateTime<Utc>, String, serde_json::Value)> =
         sqlx::query_as(

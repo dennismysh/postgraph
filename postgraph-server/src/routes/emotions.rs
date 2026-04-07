@@ -76,6 +76,28 @@ pub async fn get_narrative(
     }
 }
 
+#[derive(Serialize)]
+pub struct BackfillResponse {
+    pub classified: u32,
+}
+
+pub async fn backfill(
+    State(state): State<AppState>,
+) -> Result<Json<BackfillResponse>, (axum::http::StatusCode, Json<EmotionsError>)> {
+    let classified = emotions::backfill_emotions(&state.pool, &state.mercury)
+        .await
+        .map_err(|e| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(EmotionsError {
+                    error: e.to_string(),
+                }),
+            )
+        })?;
+
+    Ok(Json(BackfillResponse { classified }))
+}
+
 pub async fn generate_narrative(
     State(state): State<AppState>,
 ) -> Result<Json<NarrativeResponse>, (axum::http::StatusCode, Json<EmotionsError>)> {
