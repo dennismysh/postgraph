@@ -12,8 +12,8 @@
   let loading = $state(true);
   let regenerating = $state(false);
   let error = $state('');
-  let canvas: HTMLCanvasElement = $state(null as unknown as HTMLCanvasElement);
-  let chart: Chart | null = $state(null);
+  let canvas: HTMLCanvasElement;
+  let chart: Chart | null = null;
 
   const EMOTION_COLORS: Record<string, string> = {
     vulnerable: '#c084fc',
@@ -149,6 +149,7 @@
 
   onMount(() => {
     loadData();
+    return () => { if (chart) chart.destroy(); };
   });
 
   $effect(() => {

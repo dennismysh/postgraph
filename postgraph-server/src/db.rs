@@ -102,7 +102,7 @@ pub async fn mark_post_analyzed(
     pool: &PgPool,
     post_id: &str,
     sentiment: f32,
-    emotion: &str,
+    emotion: Option<&str>,
 ) -> sqlx::Result<()> {
     sqlx::query("UPDATE posts SET analyzed_at = NOW(), sentiment = $1, emotion = $2 WHERE id = $3")
         .bind(sentiment)
