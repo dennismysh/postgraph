@@ -98,9 +98,15 @@ pub async fn get_topics_for_post(pool: &PgPool, post_id: &str) -> sqlx::Result<V
     Ok(rows.into_iter().map(|(name,)| name).collect())
 }
 
-pub async fn mark_post_analyzed(pool: &PgPool, post_id: &str, sentiment: f32) -> sqlx::Result<()> {
-    sqlx::query("UPDATE posts SET analyzed_at = NOW(), sentiment = $1 WHERE id = $2")
+pub async fn mark_post_analyzed(
+    pool: &PgPool,
+    post_id: &str,
+    sentiment: f32,
+    emotion: Option<&str>,
+) -> sqlx::Result<()> {
+    sqlx::query("UPDATE posts SET analyzed_at = NOW(), sentiment = $1, emotion = $2 WHERE id = $3")
         .bind(sentiment)
+        .bind(emotion)
         .bind(post_id)
         .execute(pool)
         .await?;
@@ -117,7 +123,7 @@ pub async fn reset_all_analysis(pool: &PgPool) -> sqlx::Result<u64> {
     sqlx::query("DELETE FROM topics").execute(pool).await?;
     // Reset all analysis fields including intent/subject assignments
     let result = sqlx::query(
-        "UPDATE posts SET analyzed_at = NULL, sentiment = NULL, intent_id = NULL, subject_id = NULL",
+        "UPDATE posts SET analyzed_at = NULL, sentiment = NULL, intent_id = NULL, subject_id = NULL, emotion = NULL",
     )
     .execute(pool)
     .await?;

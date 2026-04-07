@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import type { InsightsResponse, Post } from '$lib/api';
+  import EmotionalPulse from '$lib/components/EmotionalPulse.svelte';
 
   let report: InsightsResponse | null = $state(null);
   let posts: Post[] = $state([]);
@@ -167,6 +168,8 @@
       {/each}
     </div>
   {/if}
+
+  <EmotionalPulse />
 </div>
 
 <style>

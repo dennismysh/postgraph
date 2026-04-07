@@ -1,6 +1,7 @@
 mod analysis;
 mod auth;
 mod db;
+mod emotions;
 mod error;
 mod graph;
 mod insights;
@@ -240,6 +241,17 @@ async fn main() {
                 Ok(r) => info!("Nightly insights report generated: {}", r.id),
                 Err(e) => tracing::error!("Nightly insights generation failed: {e}"),
             }
+            // Generate emotion narrative
+            match emotions::generate_narrative(
+                &nightly_state.pool,
+                &nightly_state.mercury,
+                "nightly",
+            )
+            .await
+            {
+                Ok(n) => info!("Nightly emotion narrative generated: {}", n.id),
+                Err(e) => tracing::error!("Nightly emotion narrative generation failed: {e}"),
+            }
             info!("Nightly sync complete");
         }
     });
@@ -318,6 +330,16 @@ async fn main() {
         )
         .route("/api/insights/latest", get(routes::insights::get_latest))
         .route("/api/insights/generate", post(routes::insights::generate))
+        .route("/api/emotions/summary", get(routes::emotions::get_summary))
+        .route(
+            "/api/emotions/narrative",
+            get(routes::emotions::get_narrative),
+        )
+        .route(
+            "/api/emotions/narrative/generate",
+            post(routes::emotions::generate_narrative),
+        )
+        .route("/api/emotions/backfill", post(routes::emotions::backfill))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,

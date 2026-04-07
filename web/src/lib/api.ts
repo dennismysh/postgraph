@@ -234,6 +234,42 @@ export interface InsightsResponse {
   report: InsightsReport;
 }
 
+export interface EmotionStat {
+  name: string;
+  post_count: number;
+  percentage: number;
+  avg_views: number;
+  avg_likes: number;
+  avg_replies: number;
+  avg_reposts: number;
+  top_post_id: string | null;
+}
+
+export interface EmotionsSummaryResponse {
+  window_start: string;
+  window_end: string;
+  total_posts: number;
+  emotions: EmotionStat[];
+}
+
+export interface EmotionObservation {
+  text: string;
+  cited_posts: string[];
+  emotion: string;
+}
+
+export interface EmotionNarrative {
+  headline: string;
+  observations: EmotionObservation[];
+}
+
+export interface EmotionNarrativeResponse {
+  id: string;
+  generated_at: string;
+  trigger_type: string;
+  narrative: EmotionNarrative;
+}
+
 export const api = {
   getGraph: (intent?: string, timeRange?: string) => {
     const params = new URLSearchParams();
@@ -367,5 +403,25 @@ export const api = {
       throw new Error(body.error ?? `Generate failed (${r.status})`);
     }
     return r.json() as Promise<InsightsResponse>;
+  }),
+  getEmotionsSummary: () => fetchApi<EmotionsSummaryResponse>('/api/emotions/summary'),
+  getEmotionNarrative: () => fetchApi<EmotionNarrativeResponse>('/api/emotions/narrative'),
+  generateEmotionNarrative: () => fetch('/api/emotions/narrative/generate', {
+    method: 'POST',
+  }).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({ error: `Generate failed (${r.status})` }));
+      throw new Error(body.error ?? `Generate failed (${r.status})`);
+    }
+    return r.json() as Promise<EmotionNarrativeResponse>;
+  }),
+  backfillEmotions: () => fetch('/api/emotions/backfill', {
+    method: 'POST',
+  }).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({ error: `Backfill failed (${r.status})` }));
+      throw new Error(body.error ?? `Backfill failed (${r.status})`);
+    }
+    return r.json() as Promise<{ classified: number }>;
   }),
 };

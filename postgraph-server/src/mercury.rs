@@ -1,3 +1,4 @@
+use crate::emotions::{EmotionNarrative, EmotionsSummary};
 use crate::error::AppError;
 use crate::insights::{InsightsContext, InsightsReport};
 use reqwest::Client;
@@ -43,11 +44,23 @@ pub struct AnalyzedPost {
     pub intent: String,
     pub subject: String,
     pub sentiment: f32,
+    pub emotion: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct AnalysisResponse {
     pub posts: Vec<AnalyzedPost>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClassifiedEmotion {
+    pub post_id: String,
+    pub emotion: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EmotionClassificationResponse {
+    pub posts: Vec<ClassifiedEmotion>,
 }
 
 impl MercuryClient {
@@ -109,6 +122,7 @@ For each post, extract:
 1. **Intent** — what the post is trying to do (one per post)
 2. **Subject** — what the post is about (one per post)
 3. **Sentiment** — emotional tone (-1.0 to 1.0)
+4. **Emotion** — the dominant emotional quality of the post (one per post)
 
 ## Intent (pick exactly one)
 The communicative purpose of the post. Seed examples:
@@ -130,12 +144,25 @@ The topic domain of the post. Seed examples:
 
 You may create new subjects at this same granularity level.
 
+## Emotion (pick exactly one)
+The dominant emotional quality of the post. Pick from this fixed list only:
+- Vulnerable: openness, personal sharing, admitting uncertainty
+- Curious: questions, exploration, wonder
+- Playful: humor, wit, lightheartedness
+- Confident: strong opinions, assertions, expertise
+- Reflective: introspection, lessons learned, looking back
+- Frustrated: venting, complaints, friction
+- Provocative: hot takes, challenging norms, debate-starting
+
+Always pick exactly one from this list. Do not create new emotions.
+
 ## Rules
 1. REUSABILITY TEST: Before creating a new intent or subject, ask: "Would this apply to at least 10 posts from a typical creator?" If no, use a broader existing tag.
 2. NO COMPOUND TAGS: "Coffee humor" is wrong. That's intent=Humor, subject=Daily life.
 3. PREFER EXISTING: Always reuse an existing intent/subject before creating a new one.
 4. SHORT NAMES: Max 3 words per tag.
 5. NEVER describe a single post's specific content as a tag. "UNO house rules" → subject=Gaming, intent=Question. "Parking preference" → subject=Daily life, intent=Question.
+6. EMOTION IS FIXED: Only use one of the 7 listed emotions. Never invent new ones.
 
 Existing intents: {intents_list}
 Existing subjects: {subjects_list}
@@ -143,7 +170,7 @@ Existing subjects: {subjects_list}
 Posts: {posts_json_str}
 
 Respond with ONLY valid JSON:
-{{"posts": [{{"post_id": "...", "intent": "...", "subject": "...", "sentiment": 0.5}}]}}"#
+{{"posts": [{{"post_id": "...", "intent": "...", "subject": "...", "sentiment": 0.5, "emotion": "curious"}}]}}"#
         );
 
         let request = ChatRequest {
@@ -316,5 +343,164 @@ Rules:
         })?;
 
         Ok(report)
+    }
+
+    pub async fn classify_emotions(
+        &self,
+        posts: &[(String, String)],
+    ) -> Result<Vec<ClassifiedEmotion>, AppError> {
+        let posts_json: Vec<serde_json::Value> = posts
+            .iter()
+            .map(|(id, text)| serde_json::json!({"id": id, "text": text}))
+            .collect();
+        let posts_json_str = serde_json::to_string_pretty(&posts_json).unwrap_or_default();
+
+        let prompt = format!(
+            r#"Classify the dominant emotion of each social media post. Pick exactly one from this fixed list:
+- Vulnerable: openness, personal sharing, admitting uncertainty
+- Curious: questions, exploration, wonder
+- Playful: humor, wit, lightheartedness
+- Confident: strong opinions, assertions, expertise
+- Reflective: introspection, lessons learned, looking back
+- Frustrated: venting, complaints, friction
+- Provocative: hot takes, challenging norms, debate-starting
+
+Posts: {posts_json_str}
+
+Respond with ONLY valid JSON:
+{{"posts": [{{"post_id": "...", "emotion": "curious"}}]}}"#
+        );
+
+        let request = ChatRequest {
+            model: "mercury-2".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            }],
+            temperature: 0.3,
+        };
+
+        let resp = self
+            .client
+            .post(format!("{}/chat/completions", self.api_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::MercuryApi(body));
+        }
+
+        let chat_resp: ChatResponse = resp.json().await?;
+        let content = chat_resp
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+
+        let json_str = content
+            .trim()
+            .strip_prefix("```json")
+            .or_else(|| content.trim().strip_prefix("```"))
+            .unwrap_or(content.trim())
+            .strip_suffix("```")
+            .unwrap_or(content.trim())
+            .trim();
+
+        let result: EmotionClassificationResponse =
+            serde_json::from_str(json_str).map_err(|e| {
+                AppError::MercuryApi(format!(
+                    "Failed to parse emotion classification: {e}. Raw: {json_str}"
+                ))
+            })?;
+
+        Ok(result.posts)
+    }
+
+    pub async fn generate_emotion_narrative(
+        &self,
+        summary: &EmotionsSummary,
+    ) -> Result<EmotionNarrative, AppError> {
+        let context_json = serde_json::to_string_pretty(summary)?;
+
+        let system_prompt = r#"You are a candid friend who is also a world-class content strategist. You've just reviewed 30 days of someone's social media posts, classified by emotional tone, alongside their engagement data (views, likes, replies, reposts). You care about this person's growth and you're direct, specific, and grounded in the numbers.
+
+Respond with ONLY valid JSON matching this exact structure:
+{
+  "headline": "<one punchy sentence capturing the most important emotion-engagement insight>",
+  "observations": [
+    {
+      "text": "<specific, data-grounded observation about how an emotion correlates with audience response>",
+      "cited_posts": ["<post id>", ...],
+      "emotion": "<emotion name>"
+    }
+  ]
+}
+
+Rules:
+- Return exactly 3-5 observations.
+- Focus on the creator-audience relationship: which emotions resonate, which fall flat, which get reach but not engagement (or vice versa).
+- Compare emotions against each other: "Your curious posts get 2x the views of your confident posts."
+- Comment on emotional range: is the creator one-note or diverse? Is that helping or hurting?
+- cited_posts should reference actual post IDs from the top_post_id fields when available.
+- The headline should sound like something a friend would say, not a corporate summary.
+- Be specific: cite numbers, percentages, emotion names. Avoid vague statements.
+- Do not wrap JSON in markdown code fences."#;
+
+        let request = ChatRequest {
+            model: "mercury-2".to_string(),
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: system_prompt.to_string(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: format!(
+                        "Here is the emotion breakdown for the last 30 days:\n\n{context_json}"
+                    ),
+                },
+            ],
+            temperature: 0.5,
+        };
+
+        let resp = self
+            .client
+            .post(format!("{}/chat/completions", self.api_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::MercuryApi(body));
+        }
+
+        let chat_resp: ChatResponse = resp.json().await?;
+        let content = chat_resp
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+
+        let json_str = content
+            .trim()
+            .strip_prefix("```json")
+            .or_else(|| content.trim().strip_prefix("```"))
+            .unwrap_or(content.trim())
+            .strip_suffix("```")
+            .unwrap_or(content.trim())
+            .trim();
+
+        let narrative: EmotionNarrative = serde_json::from_str(json_str).map_err(|e| {
+            AppError::MercuryApi(format!(
+                "Failed to parse emotion narrative: {e}. Raw: {json_str}"
+            ))
+        })?;
+
+        Ok(narrative)
     }
 }
