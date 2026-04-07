@@ -43,6 +43,7 @@ pub struct AnalyzedPost {
     pub intent: String,
     pub subject: String,
     pub sentiment: f32,
+    pub emotion: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,6 +110,7 @@ For each post, extract:
 1. **Intent** — what the post is trying to do (one per post)
 2. **Subject** — what the post is about (one per post)
 3. **Sentiment** — emotional tone (-1.0 to 1.0)
+4. **Emotion** — the dominant emotional quality of the post (one per post)
 
 ## Intent (pick exactly one)
 The communicative purpose of the post. Seed examples:
@@ -130,12 +132,25 @@ The topic domain of the post. Seed examples:
 
 You may create new subjects at this same granularity level.
 
+## Emotion (pick exactly one)
+The dominant emotional quality of the post. Pick from this fixed list only:
+- Vulnerable: openness, personal sharing, admitting uncertainty
+- Curious: questions, exploration, wonder
+- Playful: humor, wit, lightheartedness
+- Confident: strong opinions, assertions, expertise
+- Reflective: introspection, lessons learned, looking back
+- Frustrated: venting, complaints, friction
+- Provocative: hot takes, challenging norms, debate-starting
+
+Always pick exactly one from this list. Do not create new emotions.
+
 ## Rules
 1. REUSABILITY TEST: Before creating a new intent or subject, ask: "Would this apply to at least 10 posts from a typical creator?" If no, use a broader existing tag.
 2. NO COMPOUND TAGS: "Coffee humor" is wrong. That's intent=Humor, subject=Daily life.
 3. PREFER EXISTING: Always reuse an existing intent/subject before creating a new one.
 4. SHORT NAMES: Max 3 words per tag.
 5. NEVER describe a single post's specific content as a tag. "UNO house rules" → subject=Gaming, intent=Question. "Parking preference" → subject=Daily life, intent=Question.
+6. EMOTION IS FIXED: Only use one of the 7 listed emotions. Never invent new ones.
 
 Existing intents: {intents_list}
 Existing subjects: {subjects_list}
@@ -143,7 +158,7 @@ Existing subjects: {subjects_list}
 Posts: {posts_json_str}
 
 Respond with ONLY valid JSON:
-{{"posts": [{{"post_id": "...", "intent": "...", "subject": "...", "sentiment": 0.5}}]}}"#
+{{"posts": [{{"post_id": "...", "intent": "...", "subject": "...", "sentiment": 0.5, "emotion": "curious"}}]}}"#
         );
 
         let request = ChatRequest {

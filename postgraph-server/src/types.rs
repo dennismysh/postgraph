@@ -19,6 +19,7 @@ pub struct Post {
     pub intent_id: Option<Uuid>,
     pub subject_id: Option<Uuid>,
     pub sentiment: Option<f32>,
+    pub emotion: Option<String>,
     pub synced_at: DateTime<Utc>,
     pub analyzed_at: Option<DateTime<Utc>>,
 }

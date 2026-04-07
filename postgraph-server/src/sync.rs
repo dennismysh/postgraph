@@ -243,6 +243,7 @@ fn threads_post_to_post(tp: &ThreadsPost) -> Post {
         intent_id: None,
         subject_id: None,
         sentiment: None,
+        emotion: None,
         synced_at: Utc::now(),
         analyzed_at: None,
     }

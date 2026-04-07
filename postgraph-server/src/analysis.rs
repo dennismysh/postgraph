@@ -32,7 +32,7 @@ pub async fn run_analysis(pool: &PgPool, mercury: &MercuryClient) -> Result<u32,
     if posts_for_llm.is_empty() {
         // All posts are media-only with no text; mark them analyzed with neutral sentiment
         for post in &unanalyzed {
-            db::mark_post_analyzed(pool, &post.id, 0.0).await?;
+            db::mark_post_analyzed(pool, &post.id, 0.0, "reflective").await?;
         }
         return Ok(unanalyzed.len() as u32);
     }
@@ -60,7 +60,7 @@ pub async fn run_analysis(pool: &PgPool, mercury: &MercuryClient) -> Result<u32,
             db::upsert_subject(pool, &result.subject, "", db::next_color(subject_count)).await?;
 
         db::set_post_intent_subject(pool, &result.post_id, intent.id, subject.id).await?;
-        db::mark_post_analyzed(pool, &result.post_id, result.sentiment).await?;
+        db::mark_post_analyzed(pool, &result.post_id, result.sentiment, &result.emotion).await?;
         analyzed_count += 1;
     }
 
