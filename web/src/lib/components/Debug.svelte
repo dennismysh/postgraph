@@ -6,6 +6,8 @@
   let error: string | null = $state(null);
   let posts: DebugPost[] = $state([]);
   let range = $state('24h');
+  let backfilling = $state(false);
+  let backfillResult: string | null = $state(null);
 
   const ranges = [
     { label: '24h', value: '24h' },
@@ -63,21 +65,43 @@
     }
   }
 
+  async function runBackfill() {
+    backfilling = true;
+    backfillResult = null;
+    try {
+      const result = await api.backfillEmotions();
+      backfillResult = `Classified ${result.classified} posts`;
+    } catch (e) {
+      backfillResult = e instanceof Error ? e.message : 'Backfill failed';
+    } finally {
+      backfilling = false;
+    }
+  }
+
   onMount(fetchPosts);
 </script>
 
 <div class="debug-page">
   <div class="toolbar">
     <h2>Pipeline Debug</h2>
-    <div class="range-buttons">
-      {#each ranges as r}
-        <button
-          class:active={range === r.value}
-          onclick={() => { range = r.value; fetchPosts(); }}
-        >{r.label}</button>
-      {/each}
+    <div class="toolbar-actions">
+      <div class="range-buttons">
+        {#each ranges as r}
+          <button
+            class:active={range === r.value}
+            onclick={() => { range = r.value; fetchPosts(); }}
+          >{r.label}</button>
+        {/each}
+      </div>
+      <button class="backfill-btn" onclick={runBackfill} disabled={backfilling}>
+        {backfilling ? 'Backfilling...' : 'Backfill Emotions'}
+      </button>
     </div>
   </div>
+
+  {#if backfillResult}
+    <div class="backfill-result">{backfillResult}</div>
+  {/if}
 
   {#if loading}
     <div class="status">Loading...</div>
@@ -155,9 +179,34 @@
     color: #aaa;
     font-weight: 500;
   }
+  .toolbar-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
   .range-buttons {
     display: flex;
     gap: 4px;
+  }
+  .backfill-btn {
+    background: #1a2a1a;
+    color: #4ade80;
+    border: 1px solid #2a3a2a;
+    border-radius: 4px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .backfill-btn:hover { border-color: #4ade80; }
+  .backfill-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .backfill-result {
+    font-size: 0.8rem;
+    color: #4ade80;
+    padding: 0.5rem 0.75rem;
+    background: #111;
+    border: 1px solid #2a3a2a;
+    border-radius: 4px;
+    margin-bottom: 1rem;
   }
   .range-buttons button {
     background: #222;
