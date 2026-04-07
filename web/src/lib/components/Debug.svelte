@@ -69,8 +69,8 @@
     backfilling = true;
     backfillResult = null;
     try {
-      const result = await api.backfillEmotions();
-      backfillResult = `Classified ${result.classified} posts`;
+      await api.backfillEmotions();
+      backfillResult = 'Backfill started — check server logs for progress';
     } catch (e) {
       backfillResult = e instanceof Error ? e.message : 'Backfill failed';
     } finally {

@@ -78,24 +78,24 @@ pub async fn get_narrative(
 
 #[derive(Serialize)]
 pub struct BackfillResponse {
-    pub classified: u32,
+    pub status: String,
 }
 
 pub async fn backfill(
     State(state): State<AppState>,
-) -> Result<Json<BackfillResponse>, (axum::http::StatusCode, Json<EmotionsError>)> {
-    let classified = emotions::backfill_emotions(&state.pool, &state.mercury)
-        .await
-        .map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(EmotionsError {
-                    error: e.to_string(),
-                }),
-            )
-        })?;
+) -> Json<BackfillResponse> {
+    let pool = state.pool.clone();
+    let mercury = state.mercury.clone();
+    tokio::spawn(async move {
+        match emotions::backfill_emotions(&pool, &mercury).await {
+            Ok(n) => tracing::info!("Emotion backfill complete: {n} posts classified"),
+            Err(e) => tracing::error!("Emotion backfill failed: {e}"),
+        }
+    });
 
-    Ok(Json(BackfillResponse { classified }))
+    Json(BackfillResponse {
+        status: "Backfill started in background".to_string(),
+    })
 }
 
 pub async fn generate_narrative(
