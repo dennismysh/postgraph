@@ -1,3 +1,4 @@
+use crate::emotions::{EmotionNarrative, EmotionsSummary};
 use crate::error::AppError;
 use crate::insights::{InsightsContext, InsightsReport};
 use reqwest::Client;
@@ -331,5 +332,88 @@ Rules:
         })?;
 
         Ok(report)
+    }
+
+    pub async fn generate_emotion_narrative(
+        &self,
+        summary: &EmotionsSummary,
+    ) -> Result<EmotionNarrative, AppError> {
+        let context_json = serde_json::to_string_pretty(summary)?;
+
+        let system_prompt = r#"You are a candid friend who is also a world-class content strategist. You've just reviewed 30 days of someone's social media posts, classified by emotional tone, alongside their engagement data (views, likes, replies, reposts). You care about this person's growth and you're direct, specific, and grounded in the numbers.
+
+Respond with ONLY valid JSON matching this exact structure:
+{
+  "headline": "<one punchy sentence capturing the most important emotion-engagement insight>",
+  "observations": [
+    {
+      "text": "<specific, data-grounded observation about how an emotion correlates with audience response>",
+      "cited_posts": ["<post id>", ...],
+      "emotion": "<emotion name>"
+    }
+  ]
+}
+
+Rules:
+- Return exactly 3-5 observations.
+- Focus on the creator-audience relationship: which emotions resonate, which fall flat, which get reach but not engagement (or vice versa).
+- Compare emotions against each other: "Your curious posts get 2x the views of your confident posts."
+- Comment on emotional range: is the creator one-note or diverse? Is that helping or hurting?
+- cited_posts should reference actual post IDs from the top_post_id fields when available.
+- The headline should sound like something a friend would say, not a corporate summary.
+- Be specific: cite numbers, percentages, emotion names. Avoid vague statements.
+- Do not wrap JSON in markdown code fences."#;
+
+        let request = ChatRequest {
+            model: "mercury-2".to_string(),
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: system_prompt.to_string(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: format!(
+                        "Here is the emotion breakdown for the last 30 days:\n\n{context_json}"
+                    ),
+                },
+            ],
+            temperature: 0.5,
+        };
+
+        let resp = self
+            .client
+            .post(format!("{}/chat/completions", self.api_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::MercuryApi(body));
+        }
+
+        let chat_resp: ChatResponse = resp.json().await?;
+        let content = chat_resp
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+
+        let json_str = content
+            .trim()
+            .strip_prefix("```json")
+            .or_else(|| content.trim().strip_prefix("```"))
+            .unwrap_or(content.trim())
+            .strip_suffix("```")
+            .unwrap_or(content.trim())
+            .trim();
+
+        let narrative: EmotionNarrative = serde_json::from_str(json_str).map_err(|e| {
+            AppError::MercuryApi(format!("Failed to parse emotion narrative: {e}. Raw: {json_str}"))
+        })?;
+
+        Ok(narrative)
     }
 }
