@@ -98,7 +98,12 @@ pub async fn get_topics_for_post(pool: &PgPool, post_id: &str) -> sqlx::Result<V
     Ok(rows.into_iter().map(|(name,)| name).collect())
 }
 
-pub async fn mark_post_analyzed(pool: &PgPool, post_id: &str, sentiment: f32, emotion: &str) -> sqlx::Result<()> {
+pub async fn mark_post_analyzed(
+    pool: &PgPool,
+    post_id: &str,
+    sentiment: f32,
+    emotion: &str,
+) -> sqlx::Result<()> {
     sqlx::query("UPDATE posts SET analyzed_at = NOW(), sentiment = $1, emotion = $2 WHERE id = $3")
         .bind(sentiment)
         .bind(emotion)

@@ -496,7 +496,9 @@ Rules:
             .trim();
 
         let narrative: EmotionNarrative = serde_json::from_str(json_str).map_err(|e| {
-            AppError::MercuryApi(format!("Failed to parse emotion narrative: {e}. Raw: {json_str}"))
+            AppError::MercuryApi(format!(
+                "Failed to parse emotion narrative: {e}. Raw: {json_str}"
+            ))
         })?;
 
         Ok(narrative)

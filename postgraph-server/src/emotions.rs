@@ -61,12 +61,11 @@ pub async fn compute_summary(pool: &PgPool) -> Result<EmotionsSummary, AppError>
     let now = Utc::now();
     let window_start = now - chrono::Duration::days(30);
 
-    let total_row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM posts WHERE emotion IS NOT NULL AND timestamp >= $1",
-    )
-    .bind(window_start)
-    .fetch_one(pool)
-    .await?;
+    let total_row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM posts WHERE emotion IS NOT NULL AND timestamp >= $1")
+            .bind(window_start)
+            .fetch_one(pool)
+            .await?;
     let total_posts = total_row.0;
 
     let rows: Vec<(String, i64, f64, f64, f64, f64)> = sqlx::query_as(
@@ -174,10 +173,7 @@ fn backfill_batch_size() -> i64 {
         .unwrap_or(16)
 }
 
-pub async fn backfill_emotions(
-    pool: &PgPool,
-    mercury: &MercuryClient,
-) -> Result<u32, AppError> {
+pub async fn backfill_emotions(pool: &PgPool, mercury: &MercuryClient) -> Result<u32, AppError> {
     let batch_size = backfill_batch_size();
     let mut total_classified: u32 = 0;
 
@@ -205,10 +201,7 @@ pub async fn backfill_emotions(
             break;
         }
 
-        info!(
-            "Backfilling emotions for {} posts",
-            posts_for_llm.len()
-        );
+        info!("Backfilling emotions for {} posts", posts_for_llm.len());
 
         let results = mercury.classify_emotions(&posts_for_llm).await?;
 
@@ -230,10 +223,16 @@ pub async fn backfill_emotions(
             }
         }
 
-        info!("Backfill batch complete: {} classified so far", total_classified);
+        info!(
+            "Backfill batch complete: {} classified so far",
+            total_classified
+        );
     }
 
-    info!("Emotion backfill complete: {} total posts classified", total_classified);
+    info!(
+        "Emotion backfill complete: {} total posts classified",
+        total_classified
+    );
     Ok(total_classified)
 }
 

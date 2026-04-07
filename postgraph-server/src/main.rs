@@ -242,8 +242,12 @@ async fn main() {
                 Err(e) => tracing::error!("Nightly insights generation failed: {e}"),
             }
             // Generate emotion narrative
-            match emotions::generate_narrative(&nightly_state.pool, &nightly_state.mercury, "nightly")
-                .await
+            match emotions::generate_narrative(
+                &nightly_state.pool,
+                &nightly_state.mercury,
+                "nightly",
+            )
+            .await
             {
                 Ok(n) => info!("Nightly emotion narrative generated: {}", n.id),
                 Err(e) => tracing::error!("Nightly emotion narrative generation failed: {e}"),
@@ -327,8 +331,14 @@ async fn main() {
         .route("/api/insights/latest", get(routes::insights::get_latest))
         .route("/api/insights/generate", post(routes::insights::generate))
         .route("/api/emotions/summary", get(routes::emotions::get_summary))
-        .route("/api/emotions/narrative", get(routes::emotions::get_narrative))
-        .route("/api/emotions/narrative/generate", post(routes::emotions::generate_narrative))
+        .route(
+            "/api/emotions/narrative",
+            get(routes::emotions::get_narrative),
+        )
+        .route(
+            "/api/emotions/narrative/generate",
+            post(routes::emotions::generate_narrative),
+        )
         .route("/api/emotions/backfill", post(routes::emotions::backfill))
         .layer(middleware::from_fn_with_state(
             state.clone(),
