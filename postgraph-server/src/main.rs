@@ -257,6 +257,63 @@ async fn main() {
         }
     });
 
+    // Spawn publish scheduler (checks every 60s for posts due to publish)
+    let sched_state = state.clone();
+    tokio::spawn(async move {
+        // Startup recovery: reset stuck 'publishing' posts
+        match compose::recover_stuck(&sched_state.pool).await {
+            Ok(0) => {}
+            Ok(n) => info!("Recovered {n} stuck publishing posts"),
+            Err(e) => tracing::error!("Failed to recover stuck posts: {e}"),
+        }
+
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+
+            let due = match compose::claim_due_posts(&sched_state.pool).await {
+                Ok(posts) => posts,
+                Err(e) => {
+                    tracing::error!("Scheduler: failed to claim due posts: {e}");
+                    continue;
+                }
+            };
+
+            for post in due {
+                info!("Publishing scheduled post {}", post.id);
+
+                // Re-check status (race condition guard)
+                let current = compose::get(&sched_state.pool, post.id).await;
+                if let Ok(Some(p)) = &current {
+                    if p.status != "publishing" {
+                        info!("Post {} status changed to '{}', skipping", post.id, p.status);
+                        continue;
+                    }
+                }
+
+                let result: Result<String, crate::error::AppError> = async {
+                    let container_id = sched_state.threads.create_container(&post.text).await?;
+                    sched_state.threads.publish_container(&container_id).await
+                }.await;
+
+                match result {
+                    Ok(threads_post_id) => {
+                        info!("Published post {} as {threads_post_id}", post.id);
+                        if let Err(e) = compose::mark_published(&sched_state.pool, post.id, &threads_post_id).await {
+                            tracing::error!("Failed to mark post {} as published: {e}", post.id);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to publish post {}: {e}", post.id);
+                        if let Err(e2) = compose::mark_failed(&sched_state.pool, post.id, &e.to_string()).await {
+                            tracing::error!("Failed to mark post {} as failed: {e2}", post.id);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
     let frontend_origin =
         std::env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
     let cors = CorsLayer::new()
@@ -341,6 +398,9 @@ async fn main() {
             post(routes::emotions::generate_narrative),
         )
         .route("/api/emotions/backfill", post(routes::emotions::backfill))
+        .route("/api/compose", get(routes::compose::list_posts).post(routes::compose::create_post))
+        .route("/api/compose/{id}", get(routes::compose::get_post).put(routes::compose::update_post).delete(routes::compose::delete_post))
+        .route("/api/compose/{id}/publish", post(routes::compose::publish_now))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,
