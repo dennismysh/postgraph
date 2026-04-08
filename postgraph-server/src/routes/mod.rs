@@ -1,5 +1,6 @@
 pub mod analytics;
 pub mod analyze;
+pub mod compose;
 pub mod emotions;
 pub mod graph;
 pub mod health;
