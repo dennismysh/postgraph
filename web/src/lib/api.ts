@@ -270,6 +270,22 @@ export interface EmotionNarrativeResponse {
   narrative: EmotionNarrative;
 }
 
+export interface ScheduledPost {
+  id: string;
+  text: string;
+  status: 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed' | 'cancelled';
+  scheduled_at: string | null;
+  published_at: string | null;
+  threads_post_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublishNowResponse {
+  threads_post_id: string;
+}
+
 export const api = {
   getGraph: (intent?: string, timeRange?: string) => {
     const params = new URLSearchParams();
@@ -424,4 +440,59 @@ export const api = {
     }
     return r.json() as Promise<{ classified: number }>;
   }),
+  // Compose
+  getScheduledPosts: (params?: { status?: string; from?: string; to?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.from) searchParams.set('from', params.from);
+    if (params?.to) searchParams.set('to', params.to);
+    const qs = searchParams.toString();
+    return fetchApi<ScheduledPost[]>(`/api/compose${qs ? `?${qs}` : ''}`);
+  },
+
+  getScheduledPost: (id: string) => fetchApi<ScheduledPost>(`/api/compose/${id}`),
+
+  createScheduledPost: (body: { text: string; status?: string; scheduled_at?: string }) =>
+    fetch('/api/compose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(async r => {
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({ error: `Create failed (${r.status})` }));
+        throw new Error(data.error ?? `Create failed (${r.status})`);
+      }
+      return r.json() as Promise<ScheduledPost>;
+    }),
+
+  updateScheduledPost: (id: string, body: { text?: string; status?: string; scheduled_at?: string | null }) =>
+    fetch(`/api/compose/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(async r => {
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({ error: `Update failed (${r.status})` }));
+        throw new Error(data.error ?? `Update failed (${r.status})`);
+      }
+      return r.json() as Promise<ScheduledPost>;
+    }),
+
+  deleteScheduledPost: (id: string) =>
+    fetch(`/api/compose/${id}`, { method: 'DELETE' }).then(async r => {
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({ error: `Delete failed (${r.status})` }));
+        throw new Error(data.error ?? `Delete failed (${r.status})`);
+      }
+      return r.json() as Promise<{ deleted: boolean }>;
+    }),
+
+  publishNow: (id: string) =>
+    fetch(`/api/compose/${id}/publish`, { method: 'POST' }).then(async r => {
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({ error: `Publish failed (${r.status})` }));
+        throw new Error(data.error ?? `Publish failed (${r.status})`);
+      }
+      return r.json() as Promise<PublishNowResponse>;
+    }),
 };
