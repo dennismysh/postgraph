@@ -77,6 +77,7 @@
   function postsForDay(day: Date): ScheduledPost[] {
     const key = dateKey(day);
     return posts.filter(p => {
+      if (p.status === 'published' || p.status === 'cancelled') return false;
       const postDate = p.scheduled_at ?? p.created_at;
       return postDate.slice(0, 10) === key;
     });

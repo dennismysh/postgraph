@@ -76,7 +76,7 @@ pub async fn create_post(
     if body.text.is_empty() {
         return Err(err(axum::http::StatusCode::BAD_REQUEST, "Text cannot be empty"));
     }
-    if body.text.len() > MAX_TEXT_LENGTH {
+    if body.text.chars().count() > MAX_TEXT_LENGTH {
         return Err(err(axum::http::StatusCode::BAD_REQUEST, format!("Text exceeds {MAX_TEXT_LENGTH} character limit")));
     }
 
@@ -116,7 +116,7 @@ pub async fn update_post(
         if text.is_empty() {
             return Err(err(axum::http::StatusCode::BAD_REQUEST, "Text cannot be empty"));
         }
-        if text.len() > MAX_TEXT_LENGTH {
+        if text.chars().count() > MAX_TEXT_LENGTH {
             return Err(err(axum::http::StatusCode::BAD_REQUEST, format!("Text exceeds {MAX_TEXT_LENGTH} character limit")));
         }
     }
@@ -161,6 +161,9 @@ pub async fn publish_now(
     }
     if post.status == "publishing" {
         return Err(err(axum::http::StatusCode::BAD_REQUEST, "Post is currently being published"));
+    }
+    if post.status == "cancelled" {
+        return Err(err(axum::http::StatusCode::BAD_REQUEST, "Cannot publish a cancelled post"));
     }
 
     compose::update(&state.pool, id, None, Some("publishing"), None)

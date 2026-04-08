@@ -44,8 +44,8 @@ pub async fn list(pool: &PgPool, status: Option<&str>, from: Option<DateTime<Utc
     let rows = sqlx::query_as::<_, ScheduledPost>(
         "SELECT * FROM scheduled_posts
          WHERE ($1::text IS NULL OR status = $1)
-           AND ($2::timestamptz IS NULL OR scheduled_at >= $2)
-           AND ($3::timestamptz IS NULL OR scheduled_at < $3)
+           AND ($2::timestamptz IS NULL OR COALESCE(scheduled_at, created_at) >= $2)
+           AND ($3::timestamptz IS NULL OR COALESCE(scheduled_at, created_at) < $3)
          ORDER BY COALESCE(scheduled_at, created_at) ASC"
     )
     .bind(status)
