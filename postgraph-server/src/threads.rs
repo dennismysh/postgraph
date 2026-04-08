@@ -76,6 +76,16 @@ pub struct InsightsResponse {
     pub data: Vec<InsightData>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateContainerResponse {
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PublishResponse {
+    pub id: String,
+}
+
 #[derive(Debug, Default)]
 pub struct PostInsights {
     pub views: i32,
@@ -288,5 +298,53 @@ impl ThreadsClient {
         }
 
         Ok(result)
+    }
+
+    /// Step 1 of Threads publish: create a media container.
+    /// Returns the container ID.
+    pub async fn create_container(&self, text: &str) -> Result<String, AppError> {
+        let url = format!(
+            "{}/me/threads?media_type=TEXT&text={}&access_token={}",
+            BASE_URL,
+            urlencoding::encode(text),
+            self.token().await
+        );
+
+        let resp = self.client.post(&url).send().await?;
+        if resp.status() == 429 {
+            return Err(AppError::RateLimited(60));
+        }
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::ThreadsApi(format!(
+                "Create container failed: {body}"
+            )));
+        }
+        let data: CreateContainerResponse = resp.json().await?;
+        Ok(data.id)
+    }
+
+    /// Step 2 of Threads publish: publish a container.
+    /// Returns the published post ID.
+    pub async fn publish_container(&self, container_id: &str) -> Result<String, AppError> {
+        let url = format!(
+            "{}/me/threads_publish?creation_id={}&access_token={}",
+            BASE_URL,
+            container_id,
+            self.token().await
+        );
+
+        let resp = self.client.post(&url).send().await?;
+        if resp.status() == 429 {
+            return Err(AppError::RateLimited(60));
+        }
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::ThreadsApi(format!(
+                "Publish failed: {body}"
+            )));
+        }
+        let data: PublishResponse = resp.json().await?;
+        Ok(data.id)
     }
 }
