@@ -24,8 +24,7 @@
 
     if (mode === 'week') {
       const day = start.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      start.setDate(start.getDate() + diff);
+      start.setDate(start.getDate() - day);
       for (let i = 0; i < 7; i++) {
         const d = new Date(start);
         d.setDate(start.getDate() + i);
@@ -33,8 +32,7 @@
       }
     } else if (mode === '2week') {
       const day = start.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      start.setDate(start.getDate() + diff);
+      start.setDate(start.getDate() - day);
       for (let i = 0; i < 14; i++) {
         const d = new Date(start);
         d.setDate(start.getDate() + i);
@@ -43,8 +41,7 @@
     } else {
       start.setDate(1);
       const firstDay = start.getDay();
-      const leadingDays = firstDay === 0 ? 6 : firstDay - 1;
-      start.setDate(start.getDate() - leadingDays);
+      start.setDate(start.getDate() - firstDay);
       for (let i = 0; i < 35; i++) {
         const d = new Date(start);
         d.setDate(start.getDate() + i);
@@ -91,7 +88,7 @@
     return d.getMonth() === currentDate.getMonth();
   }
 
-  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const statusColors: Record<string, string> = {
     draft: '#666',
