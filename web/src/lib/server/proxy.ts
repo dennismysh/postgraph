@@ -6,7 +6,7 @@ import { API_URL, API_KEY } from '$env/static/private';
  */
 export async function proxyToBackend(
   path: string,
-  options: { method?: string; searchParams?: URLSearchParams } = {},
+  options: { method?: string; searchParams?: URLSearchParams; body?: string } = {},
 ): Promise<Response> {
   const url = new URL(`${API_URL}${path}`);
   if (options.searchParams) {
@@ -15,11 +15,17 @@ export async function proxyToBackend(
     }
   }
 
+  const headers: Record<string, string> = { 'Authorization': `Bearer ${API_KEY}` };
+  if (options.body) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   let res: globalThis.Response;
   try {
     res = await fetch(url.toString(), {
       method: options.method ?? 'GET',
-      headers: { 'Authorization': `Bearer ${API_KEY}` },
+      headers,
+      body: options.body,
     });
   } catch (e) {
     return jsonResponse({ error: `Backend unreachable: ${e instanceof Error ? e.message : 'unknown'}` }, 502);
