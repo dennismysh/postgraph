@@ -1,5 +1,6 @@
 mod analysis;
 mod auth;
+mod compose;
 mod db;
 mod emotions;
 mod error;
