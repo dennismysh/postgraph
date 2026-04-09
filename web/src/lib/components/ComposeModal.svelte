@@ -218,7 +218,7 @@
     justify-content: space-between;
     align-items: center;
   }
-  .header h3 { margin: 0; }
+  .header h3 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); letter-spacing: -0.01em; }
   .close-btn {
     background: none;
     border: none;
@@ -232,7 +232,7 @@
     color: #ff6b6b;
     padding: 0.5rem 0.75rem;
     border-radius: 4px;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
   }
   textarea {
     background: #111;
@@ -242,10 +242,11 @@
     border-radius: 4px;
     resize: vertical;
     font-family: inherit;
-    font-size: 0.95rem;
+    font-size: var(--text-base);
+    line-height: 1.6;
   }
   textarea:focus { outline: none; border-color: #555; }
-  .char-count { text-align: right; font-size: 0.8rem; color: #666; }
+  .char-count { text-align: right; font-size: var(--text-xs); color: #555; font-variant-numeric: tabular-nums; }
   .char-count.over { color: #e6194b; }
   .schedule-row {
     display: flex;
@@ -255,8 +256,11 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    font-size: 0.85rem;
-    color: #888;
+    font-size: var(--text-xs);
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: var(--weight-medium);
   }
   .schedule-row input {
     background: #111;
@@ -283,7 +287,8 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
   }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn.draft { background: #333; color: #ccc; }

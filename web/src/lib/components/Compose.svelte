@@ -258,9 +258,10 @@
     padding: 0.3rem 0.6rem;
     border-radius: 4px;
     cursor: pointer;
+    font-size: var(--text-sm);
   }
-  .today-btn { font-size: 0.85rem; }
-  .header-label { color: #ccc; font-size: 1rem; font-weight: 500; margin-left: 0.5rem; }
+  .today-btn { font-size: var(--text-sm); }
+  .header-label { color: #eee; font-size: var(--text-xl); font-weight: var(--weight-semibold); margin-left: 0.75rem; letter-spacing: -0.02em; }
   .view-controls {
     display: flex;
     gap: 0.5rem;
@@ -272,7 +273,8 @@
     padding: 0.3rem 0.75rem;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
   }
   .view-controls button.active { color: #fff; background: #333; }
   .new-post-btn {
@@ -280,7 +282,7 @@
     color: #6cb4ee !important;
     border-color: #2a5a8c !important;
   }
-  .loading { color: #888; text-align: center; padding: 3rem; }
+  .loading { color: #666; text-align: center; padding: 3rem; font-size: var(--text-sm); }
   .calendar {
     flex: 1;
     display: flex;
@@ -294,9 +296,12 @@
   }
   .day-header {
     text-align: center;
-    font-size: 0.8rem;
-    color: #666;
-    padding: 0.3rem 0;
+    font-size: var(--text-xs);
+    color: #555;
+    padding: 0.5rem 0;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: var(--weight-medium);
   }
   .day-grid {
     display: grid;
@@ -322,11 +327,12 @@
   .day-cell.today { border-color: #6cb4ee; }
   .day-cell.other-month { opacity: 0.4; }
   .day-number {
-    font-size: 0.75rem;
-    color: #888;
+    font-size: var(--text-sm);
+    color: #666;
     margin-bottom: 0.25rem;
+    font-variant-numeric: tabular-nums;
   }
-  .today .day-number { color: #6cb4ee; font-weight: 600; }
+  .today .day-number { color: #6cb4ee; font-weight: var(--weight-semibold); }
   .day-posts {
     display: flex;
     flex-direction: column;
@@ -337,7 +343,7 @@
   .post-chip {
     padding: 0.2rem 0.4rem;
     border-radius: 3px;
-    font-size: 0.7rem;
+    font-size: var(--text-xs);
     cursor: pointer;
     display: flex;
     justify-content: space-between;
@@ -346,8 +352,8 @@
     border: none;
     color: #ccc;
     text-align: left;
-    font: inherit;
-    font-size: 0.7rem;
+    font-family: inherit;
+    line-height: 1.3;
   }
   .post-chip:hover { filter: brightness(1.3); }
   .chip-text {
@@ -356,5 +362,5 @@
     white-space: nowrap;
     flex: 1;
   }
-  .chip-time { color: #888; font-size: 0.65rem; flex-shrink: 0; }
+  .chip-time { color: #888; font-size: var(--text-xs); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 </style>

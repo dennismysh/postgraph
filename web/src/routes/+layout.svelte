@@ -41,9 +41,26 @@
 <style>
   :global(body) {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     background: #0a0a0a;
     color: #eee;
+    font-size: 1rem;
+    line-height: 1.55;
+    font-kerning: normal;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    /* Type scale — major third (1.25) */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.5rem;
+
+    /* Weights */
+    --weight-normal: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
   }
   .layout { display: flex; flex-direction: column; height: 100vh; }
   nav {
@@ -62,9 +79,12 @@
     text-decoration: none;
     padding: 0.3rem 0.6rem;
     border-radius: 4px;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    letter-spacing: 0.01em;
   }
   nav a.active { color: #fff; background: #333; }
-  .logout { color: #888; font-size: 0.85rem; }
+  .logout { color: #888; font-size: var(--text-xs); }
   .logout:hover { color: #e6194b; }
   .content { flex: 1; overflow-y: auto; min-height: 0; }
 </style>
