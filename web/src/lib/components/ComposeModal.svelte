@@ -204,14 +204,14 @@
   }
   .modal {
     background: #1a1a1a;
-    border: 1px solid #333;
+    border: 1px solid #2a2a2a;
     border-radius: 8px;
-    padding: 1.5rem;
+    padding: var(--space-xl);
     width: 90%;
     max-width: 520px;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-md);
   }
   .header {
     display: flex;
@@ -250,7 +250,7 @@
   .char-count.over { color: #e6194b; }
   .schedule-row {
     display: flex;
-    gap: 1rem;
+    gap: var(--space-lg);
   }
   .schedule-row label {
     display: flex;
@@ -274,12 +274,14 @@
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: var(--space-sm);
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid #222;
   }
   .primary-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-sm);
     margin-left: auto;
   }
   .btn {

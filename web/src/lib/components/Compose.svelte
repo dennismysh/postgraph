@@ -195,6 +195,7 @@
           <div
             class="day-cell"
             class:today={isToday(day)}
+            class:has-posts={postsForDay(day).length > 0}
             class:other-month={viewMode === 'month' && !isCurrentMonth(day)}
             role="button"
             onclick={() => openNewPost(day)}
@@ -236,53 +237,57 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    padding: 1rem;
-    gap: 0.75rem;
+    padding: var(--space-lg) var(--space-xl);
+    gap: var(--space-xl);
   }
   .toolbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-sm);
   }
   .nav-controls {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-sm);
   }
   .nav-controls button {
-    background: #222;
-    border: 1px solid #333;
-    color: #ccc;
-    padding: 0.3rem 0.6rem;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    color: #999;
+    padding: var(--space-xs) var(--space-sm);
     border-radius: 4px;
     cursor: pointer;
     font-size: var(--text-sm);
   }
+  .nav-controls button:hover { border-color: #444; color: #ccc; }
   .today-btn { font-size: var(--text-sm); }
-  .header-label { color: #eee; font-size: var(--text-xl); font-weight: var(--weight-semibold); margin-left: 0.75rem; letter-spacing: -0.02em; }
+  .header-label { color: #eee; font-size: var(--text-xl); font-weight: var(--weight-semibold); margin-left: var(--space-md); letter-spacing: -0.02em; }
   .view-controls {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-xs);
   }
   .view-controls button {
-    background: #222;
-    border: 1px solid #333;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
     color: #888;
-    padding: 0.3rem 0.75rem;
+    padding: var(--space-xs) var(--space-md);
     border-radius: 4px;
     cursor: pointer;
     font-size: var(--text-sm);
     font-weight: var(--weight-medium);
   }
-  .view-controls button.active { color: #fff; background: #333; }
+  .view-controls button:hover { border-color: #444; color: #ccc; }
+  .view-controls button.active { color: #fff; background: #2a2a2a; border-color: #444; }
   .new-post-btn {
-    background: #1a3a5c !important;
-    color: #6cb4ee !important;
-    border-color: #2a5a8c !important;
+    background: #1a3a5c;
+    color: #6cb4ee;
+    border-color: #2a5a8c;
+    margin-left: var(--space-sm);
   }
-  .loading { color: #666; text-align: center; padding: 3rem; font-size: var(--text-sm); }
+  .new-post-btn:hover { background: #1f4570; }
+  .loading { color: #555; text-align: center; padding: var(--space-3xl); font-size: var(--text-sm); }
   .calendar {
     flex: 1;
     display: flex;
@@ -292,13 +297,14 @@
   .day-headers {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 1px;
+    gap: 2px;
+    margin-bottom: var(--space-xs);
   }
   .day-header {
     text-align: center;
     font-size: var(--text-xs);
     color: #555;
-    padding: 0.5rem 0;
+    padding: var(--space-sm) 0;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-weight: var(--weight-medium);
@@ -306,14 +312,15 @@
   .day-grid {
     display: grid;
     flex: 1;
-    gap: 1px;
+    column-gap: 2px;
+    row-gap: 2px;
     min-height: 0;
   }
   .day-cell {
-    background: #141414;
-    border: 1px solid #222;
+    background: #0f0f0f;
+    border: 1px solid transparent;
     border-radius: 4px;
-    padding: 0.3rem;
+    padding: var(--space-sm);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -322,38 +329,41 @@
     color: inherit;
     font: inherit;
     min-height: 80px;
+    transition: background 0.15s, border-color 0.15s;
   }
-  .day-cell:hover { border-color: #444; }
-  .day-cell.today { border-color: #6cb4ee; }
-  .day-cell.other-month { opacity: 0.4; }
+  .day-cell:hover { background: #161616; border-color: #2a2a2a; }
+  .day-cell.has-posts { background: #141414; }
+  .day-cell.today { background: #111318; border-color: #1a3a5c; }
+  .day-cell.other-month { opacity: 0.3; }
   .day-number {
     font-size: var(--text-sm);
-    color: #666;
-    margin-bottom: 0.25rem;
+    color: #555;
+    margin-bottom: var(--space-xs);
     font-variant-numeric: tabular-nums;
   }
   .today .day-number { color: #6cb4ee; font-weight: var(--weight-semibold); }
   .day-posts {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
     overflow-y: auto;
     flex: 1;
   }
   .post-chip {
-    padding: 0.2rem 0.4rem;
+    padding: var(--space-xs) var(--space-sm);
     border-radius: 3px;
     font-size: var(--text-xs);
     cursor: pointer;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-xs);
     border: none;
     color: #ccc;
     text-align: left;
     font-family: inherit;
     line-height: 1.3;
+    transition: filter 0.1s;
   }
   .post-chip:hover { filter: brightness(1.3); }
   .chip-text {
