@@ -548,4 +548,13 @@ export const api = {
       }
       return r.json() as Promise<{ dismissed: boolean }>;
     }),
+
+  detectReplies: () =>
+    fetch('/api/replies/detect', { method: 'POST' }).then(async r => {
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({ error: `Detection failed (${r.status})` }));
+        throw new Error(data.error ?? `Detection failed (${r.status})`);
+      }
+      return r.json() as Promise<{ detected: number }>;
+    }),
 };
