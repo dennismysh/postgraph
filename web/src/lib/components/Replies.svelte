@@ -97,7 +97,7 @@
   </div>
 
   {#if loading}
-    <div class="empty">Loading...</div>
+    <div class="empty">Loading replies...</div>
   {:else if replies.length === 0}
     <div class="empty">
       {filter === 'unreplied' ? 'All caught up' : 'No replies yet'}
@@ -107,14 +107,14 @@
       {#each replies as reply (reply.id)}
         <div class="reply-card">
           <div class="parent-context">
-            {reply.parent_post_text ?? 'Original post'}
+            {reply.parent_post_text ?? 'Your post'}
           </div>
           <div class="reply-header">
             <span class="username">@{reply.username ?? 'unknown'}</span>
             <span class="time">{timeAgo(reply.timestamp)}</span>
             {#if reply.status !== 'unreplied'}
               <span class="status-badge" class:replied={reply.status === 'replied'} class:dismissed={reply.status === 'dismissed'}>
-                {reply.status}
+                {reply.status === 'replied' ? 'Replied' : 'Skipped'}
               </span>
             {/if}
           </div>
@@ -123,7 +123,7 @@
           {#if reply.status === 'unreplied'}
             <div class="reply-actions">
               <button class="btn reply-btn" onclick={() => startReply(reply.id)}>Reply</button>
-              <button class="btn dismiss-btn" onclick={() => dismiss(reply.id)}>Dismiss</button>
+              <button class="btn dismiss-btn" onclick={() => dismiss(reply.id)}>Skip</button>
             </div>
           {/if}
 
@@ -252,9 +252,13 @@
   }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .reply-btn { background: #1a3a5c; color: #6cb4ee; }
-  .dismiss-btn { background: #333; color: #888; }
-  .cancel-btn { background: #333; color: #ccc; }
-  .send-btn { background: #1a4a2e; color: #6be67a; }
+  .reply-btn:hover:not(:disabled) { background: #1f4570; }
+  .dismiss-btn { background: transparent; color: #666; border: none; }
+  .dismiss-btn:hover:not(:disabled) { color: #999; }
+  .cancel-btn { background: transparent; color: #888; border: none; }
+  .cancel-btn:hover:not(:disabled) { color: #ccc; }
+  .send-btn { background: #1a4a2e; color: #6be67a; border: 1px solid #2a6a3e; }
+  .send-btn:hover:not(:disabled) { background: #1f5a36; }
   .reply-compose {
     margin-top: var(--space-md);
     border-top: 1px solid #222;

@@ -139,12 +139,12 @@
     {/if}
 
     {#if post?.status === 'failed' && post.error_message}
-      <div class="error">Last error: {post.error_message}</div>
+      <div class="error">{post.error_message}</div>
     {/if}
 
     <textarea
       bind:value={text}
-      placeholder="What's on your mind?"
+      placeholder="Write your post..."
       rows="6"
       disabled={saving || post?.status === 'published'}
     ></textarea>
@@ -166,25 +166,25 @@
 
     <div class="actions">
       {#if post?.status === 'failed'}
-        <button class="btn retry" onclick={retryPost} disabled={saving}>Retry</button>
+        <button class="btn-text retry" onclick={retryPost} disabled={saving}>Reschedule</button>
       {/if}
       {#if post?.status === 'scheduled'}
-        <button class="btn cancel" onclick={cancelPost} disabled={saving}>Cancel Post</button>
+        <button class="btn-text cancel" onclick={cancelPost} disabled={saving}>Unschedule</button>
       {/if}
       {#if post?.status === 'draft'}
-        <button class="btn delete" onclick={deletePost} disabled={saving}>Delete Draft</button>
+        <button class="btn-text delete" onclick={deletePost} disabled={saving}>Delete</button>
       {/if}
 
       {#if post?.status !== 'published' && post?.status !== 'cancelled'}
         <div class="primary-actions">
-          <button class="btn draft" onclick={() => save('draft')} disabled={saving || overLimit}>
-            Save as Draft
+          <button class="btn-ghost" onclick={() => save('draft')} disabled={saving || overLimit}>
+            Save draft
           </button>
-          <button class="btn schedule" onclick={() => save('schedule')} disabled={saving || overLimit || !scheduledDate}>
+          <button class="btn-outline" onclick={() => save('schedule')} disabled={saving || overLimit || !scheduledDate}>
             Schedule
           </button>
-          <button class="btn publish" onclick={() => save('publish')} disabled={saving || overLimit}>
-            Post Now
+          <button class="btn-filled" onclick={() => save('publish')} disabled={saving || overLimit}>
+            Post now
           </button>
         </div>
       {/if}
@@ -284,19 +284,54 @@
     gap: var(--space-sm);
     margin-left: auto;
   }
-  .btn {
+  /* Button hierarchy: ghost → outline → filled */
+  .btn-ghost, .btn-outline, .btn-filled, .btn-text {
     padding: 0.5rem 1rem;
-    border: none;
     border-radius: 4px;
     cursor: pointer;
     font-size: var(--text-sm);
     font-weight: var(--weight-medium);
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn.draft { background: #333; color: #ccc; }
-  .btn.schedule { background: #1a3a5c; color: #6cb4ee; }
-  .btn.publish { background: #1a4a2e; color: #6be67a; }
-  .btn.cancel { background: #3a2a15; color: #e6a64b; }
-  .btn.delete { background: #3a1515; color: #e6194b; }
-  .btn.retry { background: #1a3a5c; color: #6cb4ee; }
+  .btn-ghost:disabled, .btn-outline:disabled, .btn-filled:disabled, .btn-text:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* Ghost — lowest prominence (Save draft) */
+  .btn-ghost {
+    background: transparent;
+    border: none;
+    color: #888;
+  }
+  .btn-ghost:hover:not(:disabled) { color: #ccc; background: #1a1a1a; }
+
+  /* Outline — medium prominence (Schedule) */
+  .btn-outline {
+    background: transparent;
+    border: 1px solid #2a5a8c;
+    color: #6cb4ee;
+  }
+  .btn-outline:hover:not(:disabled) { background: #1a3a5c; border-color: #3a6a9c; }
+
+  /* Filled — highest prominence (Post now) */
+  .btn-filled {
+    background: #1a4a2e;
+    border: 1px solid #2a6a3e;
+    color: #6be67a;
+  }
+  .btn-filled:hover:not(:disabled) { background: #1f5a36; border-color: #3a7a4e; }
+
+  /* Text buttons — destructive/secondary actions */
+  .btn-text {
+    background: none;
+    border: none;
+    padding: 0.5rem 0.75rem;
+  }
+  .btn-text.cancel { color: #888; }
+  .btn-text.cancel:hover:not(:disabled) { color: #e6a64b; }
+  .btn-text.delete { color: #888; }
+  .btn-text.delete:hover:not(:disabled) { color: #e6194b; }
+  .btn-text.retry { color: #6cb4ee; }
+  .btn-text.retry:hover:not(:disabled) { color: #8cc8ff; }
 </style>
