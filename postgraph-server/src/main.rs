@@ -166,7 +166,13 @@ async fn main() {
                 tracing::error!("Background reply sync failed: {e}");
             }
             // Detect externally-replied replies
-            if let Err(e) = sync::detect_external_replies(&bg_state.pool, &bg_state.threads, &bg_state.owner_username).await {
+            if let Err(e) = sync::detect_external_replies(
+                &bg_state.pool,
+                &bg_state.threads,
+                &bg_state.owner_username,
+            )
+            .await
+            {
                 tracing::error!("Background reply detection failed: {e}");
             }
             // Task 3: Refresh daily views (idempotent upsert, fetches last 7 days)
@@ -314,7 +320,10 @@ async fn main() {
                 let current = compose::get(&sched_state.pool, post.id).await;
                 if let Ok(Some(p)) = &current {
                     if p.status != "publishing" {
-                        info!("Post {} status changed to '{}', skipping", post.id, p.status);
+                        info!(
+                            "Post {} status changed to '{}', skipping",
+                            post.id, p.status
+                        );
                         continue;
                     }
                 }
@@ -322,18 +331,24 @@ async fn main() {
                 let result: Result<String, crate::error::AppError> = async {
                     let container_id = sched_state.threads.create_container(&post.text).await?;
                     sched_state.threads.publish_container(&container_id).await
-                }.await;
+                }
+                .await;
 
                 match result {
                     Ok(threads_post_id) => {
                         info!("Published post {} as {threads_post_id}", post.id);
-                        if let Err(e) = compose::mark_published(&sched_state.pool, post.id, &threads_post_id).await {
+                        if let Err(e) =
+                            compose::mark_published(&sched_state.pool, post.id, &threads_post_id)
+                                .await
+                        {
                             tracing::error!("Failed to mark post {} as published: {e}", post.id);
                         }
                     }
                     Err(e) => {
                         tracing::error!("Failed to publish post {}: {e}", post.id);
-                        if let Err(e2) = compose::mark_failed(&sched_state.pool, post.id, &e.to_string()).await {
+                        if let Err(e2) =
+                            compose::mark_failed(&sched_state.pool, post.id, &e.to_string()).await
+                        {
                             tracing::error!("Failed to mark post {} as failed: {e2}", post.id);
                         }
                     }
@@ -426,13 +441,27 @@ async fn main() {
             post(routes::emotions::generate_narrative),
         )
         .route("/api/emotions/backfill", post(routes::emotions::backfill))
-        .route("/api/compose", get(routes::compose::list_posts).post(routes::compose::create_post))
-        .route("/api/compose/{id}", get(routes::compose::get_post).put(routes::compose::update_post).delete(routes::compose::delete_post))
-        .route("/api/compose/{id}/publish", post(routes::compose::publish_now))
+        .route(
+            "/api/compose",
+            get(routes::compose::list_posts).post(routes::compose::create_post),
+        )
+        .route(
+            "/api/compose/{id}",
+            get(routes::compose::get_post)
+                .put(routes::compose::update_post)
+                .delete(routes::compose::delete_post),
+        )
+        .route(
+            "/api/compose/{id}/publish",
+            post(routes::compose::publish_now),
+        )
         .route("/api/replies", get(routes::replies::list_replies))
         .route("/api/replies/count", get(routes::replies::count_unreplied))
         .route("/api/replies/{id}/reply", post(routes::replies::send_reply))
-        .route("/api/replies/{id}/dismiss", post(routes::replies::dismiss_reply))
+        .route(
+            "/api/replies/{id}/dismiss",
+            post(routes::replies::dismiss_reply),
+        )
         .route("/api/replies/detect", post(routes::replies::detect_replies))
         .layer(middleware::from_fn_with_state(
             state.clone(),

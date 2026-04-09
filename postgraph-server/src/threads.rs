@@ -221,11 +221,7 @@ impl ThreadsClient {
             let data: RepliesResponse = resp.json().await?;
             all_replies.extend(data.data);
 
-            let has_next = data
-                .paging
-                .as_ref()
-                .and_then(|p| p.next.as_ref())
-                .is_some();
+            let has_next = data.paging.as_ref().and_then(|p| p.next.as_ref()).is_some();
             if !has_next {
                 break;
             }
@@ -438,9 +434,7 @@ impl ThreadsClient {
         }
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(AppError::ThreadsApi(format!(
-                "Publish failed: {body}"
-            )));
+            return Err(AppError::ThreadsApi(format!("Publish failed: {body}")));
         }
         let data: PublishResponse = resp.json().await?;
         Ok(data.id)
@@ -471,11 +465,7 @@ impl ThreadsClient {
             let data: RepliesResponse = resp.json().await?;
             all_replies.extend(data.data);
 
-            let has_next = data
-                .paging
-                .as_ref()
-                .and_then(|p| p.next.as_ref())
-                .is_some();
+            let has_next = data.paging.as_ref().and_then(|p| p.next.as_ref()).is_some();
             if !has_next {
                 break;
             }

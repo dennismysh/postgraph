@@ -197,10 +197,7 @@ pub async fn sync_daily_views(pool: &PgPool, client: &ThreadsClient) -> Result<u
 
 /// Sync replies for posts from the last 7 days.
 /// New replies are inserted with status 'unreplied'. Existing replies only update synced_at.
-pub async fn sync_replies(
-    pool: &PgPool,
-    client: &ThreadsClient,
-) -> Result<u32, AppError> {
+pub async fn sync_replies(pool: &PgPool, client: &ThreadsClient) -> Result<u32, AppError> {
     let post_ids = crate::replies::recent_post_ids(pool, 7).await?;
     info!("Syncing replies for {} recent posts", post_ids.len());
 
@@ -234,7 +231,8 @@ pub async fn sync_replies(
                 reply.username.as_deref(),
                 reply.text.as_deref(),
                 ts,
-            ).await?;
+            )
+            .await?;
             total_synced += 1;
         }
 

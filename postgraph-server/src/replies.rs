@@ -45,7 +45,7 @@ pub async fn upsert_reply(
     sqlx::query(
         "INSERT INTO replies (id, parent_post_id, username, text, timestamp)
          VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (id) DO UPDATE SET synced_at = now()"
+         ON CONFLICT (id) DO UPDATE SET synced_at = now()",
     )
     .bind(id)
     .bind(parent_post_id)
@@ -64,7 +64,7 @@ pub async fn list(pool: &PgPool, status: Option<&str>) -> Result<Vec<ReplyWithCo
          FROM replies r
          LEFT JOIN posts p ON r.parent_post_id = p.id
          WHERE ($1::text IS NULL OR r.status = $1)
-         ORDER BY CASE WHEN r.status = 'unreplied' THEN 0 ELSE 1 END, r.timestamp ASC"
+         ORDER BY CASE WHEN r.status = 'unreplied' THEN 0 ELSE 1 END, r.timestamp ASC",
     )
     .bind(status)
     .fetch_all(pool)
@@ -103,12 +103,10 @@ pub async fn mark_replied(pool: &PgPool, id: &str, our_reply_id: &str) -> Result
 
 /// Mark a reply as dismissed.
 pub async fn mark_dismissed(pool: &PgPool, id: &str) -> Result<bool, AppError> {
-    let result = sqlx::query(
-        "UPDATE replies SET status = 'dismissed' WHERE id = $1"
-    )
-    .bind(id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("UPDATE replies SET status = 'dismissed' WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 
