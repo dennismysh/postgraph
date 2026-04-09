@@ -297,6 +297,7 @@ export interface ReplyWithContext {
   our_reply_id: string | null;
   synced_at: string;
   parent_post_text: string | null;
+  parent_post_permalink: string | null;
 }
 
 export interface ReplyCountResponse {

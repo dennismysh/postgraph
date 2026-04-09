@@ -30,6 +30,7 @@ pub struct ReplyWithContext {
     pub our_reply_id: Option<String>,
     pub synced_at: DateTime<Utc>,
     pub parent_post_text: Option<String>,
+    pub parent_post_permalink: Option<String>,
 }
 
 /// Upsert a reply from the Threads API. New replies get status 'unreplied'.
@@ -60,7 +61,7 @@ pub async fn upsert_reply(
 /// List replies with parent post context.
 pub async fn list(pool: &PgPool, status: Option<&str>) -> Result<Vec<ReplyWithContext>, AppError> {
     let rows = sqlx::query_as::<_, ReplyWithContext>(
-        "SELECT r.*, LEFT(p.text, 80) AS parent_post_text
+        "SELECT r.*, LEFT(p.text, 80) AS parent_post_text, p.permalink AS parent_post_permalink
          FROM replies r
          LEFT JOIN posts p ON r.parent_post_id = p.id
          WHERE ($1::text IS NULL OR r.status = $1)

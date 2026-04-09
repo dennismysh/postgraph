@@ -137,7 +137,11 @@
             {reply.parent_post_text ?? 'Your post'}
           </div>
           <div class="reply-header">
-            <span class="username">@{reply.username ?? 'unknown'}</span>
+            {#if reply.parent_post_permalink}
+              <a class="username" href={reply.parent_post_permalink} target="_blank" rel="noopener">@{reply.username ?? 'unknown'}</a>
+            {:else}
+              <span class="username">@{reply.username ?? 'unknown'}</span>
+            {/if}
             <span class="time">{timeAgo(reply.timestamp)}</span>
             {#if reply.status !== 'unreplied'}
               <span class="status-badge" class:replied={reply.status === 'replied'} class:dismissed={reply.status === 'dismissed'}>
@@ -264,7 +268,8 @@
     gap: var(--space-sm);
     margin-bottom: var(--space-xs);
   }
-  .username { color: #6cb4ee; font-size: var(--text-sm); font-weight: var(--weight-medium); }
+  .username { color: #6cb4ee; font-size: var(--text-sm); font-weight: var(--weight-medium); text-decoration: none; }
+  a.username:hover { text-decoration: underline; }
   .time { color: #555; font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
   .status-badge {
     font-size: 0.6875rem;
