@@ -1,7 +1,19 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { onMount } from 'svelte';
+  import { api } from '$lib/api';
 
   let { children } = $props();
+  let unrepliedCount = $state(0);
+
+  onMount(async () => {
+    try {
+      const data = await api.getReplyCount();
+      unrepliedCount = data.count;
+    } catch {
+      // silently fail — badge just won't show
+    }
+  });
 </script>
 
 <div class="layout">
@@ -12,6 +24,9 @@
       <a href="/analytics-v2" class:active={$page.url.pathname === '/analytics-v2'}>V2</a>
       <a href="/insights" class:active={$page.url.pathname === '/insights'}>Insights</a>
       <a href="/compose" class:active={$page.url.pathname === '/compose'}>Compose</a>
+      <a href="/replies" class:active={$page.url.pathname === '/replies'}>
+        Replies{#if unrepliedCount > 0} ({unrepliedCount}){/if}
+      </a>
       <a href="/fourier" class:active={$page.url.pathname === '/fourier'}>ƒ(t)</a>
       <a href="/debug" class:active={$page.url.pathname === '/debug'}>Debug</a>
       <a href="/health" class:active={$page.url.pathname === '/health'}>Health</a>
