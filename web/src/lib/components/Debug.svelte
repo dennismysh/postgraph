@@ -8,6 +8,8 @@
   let range = $state('24h');
   let backfilling = $state(false);
   let backfillResult: string | null = $state(null);
+  let detecting = $state(false);
+  let detectResult: string | null = $state(null);
 
   const ranges = [
     { label: '24h', value: '24h' },
@@ -78,6 +80,19 @@
     }
   }
 
+  async function runDetectReplies() {
+    detecting = true;
+    detectResult = null;
+    try {
+      const result = await api.detectReplies();
+      detectResult = `Detected ${result.detected} externally-replied replies`;
+    } catch (e) {
+      detectResult = e instanceof Error ? e.message : 'Detection failed';
+    } finally {
+      detecting = false;
+    }
+  }
+
   onMount(fetchPosts);
 </script>
 
@@ -96,11 +111,18 @@
       <button class="backfill-btn" onclick={runBackfill} disabled={backfilling}>
         {backfilling ? 'Backfilling...' : 'Backfill Emotions'}
       </button>
+      <button class="backfill-btn" onclick={runDetectReplies} disabled={detecting}>
+        {detecting ? 'Detecting...' : 'Detect Replies'}
+      </button>
     </div>
   </div>
 
   {#if backfillResult}
     <div class="backfill-result">{backfillResult}</div>
+  {/if}
+
+  {#if detectResult}
+    <div class="backfill-result">{detectResult}</div>
   {/if}
 
   {#if loading}
