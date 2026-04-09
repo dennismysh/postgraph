@@ -165,6 +165,10 @@ async fn main() {
             if let Err(e) = sync::sync_replies(&bg_state.pool, &bg_state.threads).await {
                 tracing::error!("Background reply sync failed: {e}");
             }
+            // Detect externally-replied replies
+            if let Err(e) = sync::detect_external_replies(&bg_state.pool, &bg_state.threads, &bg_state.owner_username).await {
+                tracing::error!("Background reply detection failed: {e}");
+            }
             // Task 3: Refresh daily views (idempotent upsert, fetches last 7 days)
             if let Err(e) = sync::sync_daily_views(&bg_state.pool, &bg_state.threads).await {
                 tracing::error!("Background daily views sync failed: {e}");
@@ -429,6 +433,7 @@ async fn main() {
         .route("/api/replies/count", get(routes::replies::count_unreplied))
         .route("/api/replies/{id}/reply", post(routes::replies::send_reply))
         .route("/api/replies/{id}/dismiss", post(routes::replies::dismiss_reply))
+        .route("/api/replies/detect", post(routes::replies::detect_replies))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,

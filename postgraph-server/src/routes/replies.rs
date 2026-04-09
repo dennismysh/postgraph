@@ -112,3 +112,21 @@ pub async fn dismiss_reply(
     }
     Ok(Json(DismissResponse { dismissed }))
 }
+
+#[derive(Serialize)]
+pub struct DetectResponse {
+    pub detected: u64,
+}
+
+pub async fn detect_replies(
+    State(state): State<AppState>,
+) -> RepliesResult<DetectResponse> {
+    let detected = crate::sync::detect_external_replies(
+        &state.pool,
+        &state.threads,
+        &state.owner_username,
+    )
+    .await
+    .map_err(internal)?;
+    Ok(Json(DetectResponse { detected }))
+}
