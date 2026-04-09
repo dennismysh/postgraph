@@ -246,6 +246,85 @@ pub async fn sync_replies(
     Ok(total_synced)
 }
 
+// ── Task 5: External Reply Detection ──────────────────────────────
+
+/// Detect replies made outside postgraph by checking conversation threads
+/// for the owner's username. Marks detected replies as 'replied'.
+pub async fn detect_external_replies(
+    pool: &PgPool,
+    client: &ThreadsClient,
+    owner_username: &str,
+) -> Result<u64, AppError> {
+    if owner_username.is_empty() {
+        warn!("Owner username not set, skipping reply detection");
+        return Ok(0);
+    }
+
+    let grouped = crate::replies::unreplied_grouped_by_parent(pool).await?;
+    let parent_count = grouped.len();
+    info!("Detecting external replies across {parent_count} parent posts");
+
+    let mut detected: u64 = 0;
+
+    for (parent_post_id, unreplied_replies) in &grouped {
+        let conversation = match client.get_conversation(parent_post_id).await {
+            Ok(c) => c,
+            Err(AppError::RateLimited(_)) => {
+                warn!("Rate limited during reply detection, stopping early");
+                return Ok(detected);
+            }
+            Err(e) => {
+                warn!("Failed to fetch conversation for {parent_post_id}: {e}");
+                continue;
+            }
+        };
+
+        // Find all our replies in this conversation (by username match)
+        let our_replies: Vec<_> = conversation
+            .iter()
+            .filter(|r| r.username.as_deref() == Some(owner_username))
+            .collect();
+
+        if our_replies.is_empty() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            continue;
+        }
+
+        // For each unreplied reply, check if we have a reply after it
+        for (reply_id, reply_ts) in unreplied_replies {
+            let we_replied = our_replies.iter().any(|our| {
+                // If we have timestamp info, check our reply is after theirs
+                match (reply_ts, &our.timestamp) {
+                    (Some(their_ts), Some(our_ts_str)) => {
+                        // Parse our timestamp
+                        let our_ts = chrono::DateTime::parse_from_rfc3339(our_ts_str)
+                            .ok()
+                            .or_else(|| {
+                                chrono::DateTime::parse_from_str(our_ts_str, "%Y-%m-%dT%H:%M:%S%z")
+                                    .ok()
+                            })
+                            .map(|dt| dt.with_timezone(&chrono::Utc));
+                        our_ts.is_some_and(|ot| ot > *their_ts)
+                    }
+                    // If timestamps are missing, presence of our reply is enough
+                    _ => true,
+                }
+            });
+
+            if we_replied {
+                if crate::replies::mark_replied_external(pool, reply_id).await? {
+                    detected += 1;
+                }
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    info!("Detected {detected} externally-replied replies across {parent_count} posts");
+    Ok(detected)
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 fn parse_threads_timestamp(ts: &str) -> Option<DateTime<Utc>> {
