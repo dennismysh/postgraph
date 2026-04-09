@@ -11,6 +11,7 @@ pub struct AppState {
     pub threads: Arc<ThreadsClient>,
     pub mercury: Arc<MercuryClient>,
     pub api_key: String,
+    pub owner_username: String,
     pub analysis_running: Arc<AtomicBool>,
     pub analysis_progress: Arc<AtomicU32>,
     pub analysis_total: Arc<AtomicU32>,

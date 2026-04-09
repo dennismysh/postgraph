@@ -76,11 +76,30 @@ async fn main() {
         }
     };
 
+    let threads = Arc::new(ThreadsClient::new(effective_token));
+
+    // Resolve owner username from Threads API
+    let owner_username = match threads.get_me().await {
+        Ok(me) => {
+            let username = me.username.unwrap_or_else(|| {
+                tracing::warn!("Threads /me returned no username, using empty string");
+                String::new()
+            });
+            info!("Threads owner: @{username}");
+            username
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch Threads username: {e}");
+            String::new()
+        }
+    };
+
     let state = AppState {
         pool: pool.clone(),
-        threads: Arc::new(ThreadsClient::new(effective_token)),
+        threads,
         mercury: Arc::new(MercuryClient::new(mercury_key, mercury_url)),
         api_key,
+        owner_username,
         analysis_running: Arc::new(AtomicBool::new(false)),
         analysis_progress: Arc::new(AtomicU32::new(0)),
         analysis_total: Arc::new(AtomicU32::new(0)),
