@@ -291,18 +291,10 @@ pub async fn detect_external_replies(
         // For each unreplied reply, check if we have a reply after it
         for (reply_id, reply_ts) in unreplied_replies {
             let we_replied = our_replies.iter().any(|our| {
-                // If we have timestamp info, check our reply is after theirs
                 match (reply_ts, &our.timestamp) {
                     (Some(their_ts), Some(our_ts_str)) => {
-                        // Parse our timestamp
-                        let our_ts = chrono::DateTime::parse_from_rfc3339(our_ts_str)
-                            .ok()
-                            .or_else(|| {
-                                chrono::DateTime::parse_from_str(our_ts_str, "%Y-%m-%dT%H:%M:%S%z")
-                                    .ok()
-                            })
-                            .map(|dt| dt.with_timezone(&chrono::Utc));
-                        our_ts.is_some_and(|ot| ot > *their_ts)
+                        parse_threads_timestamp(our_ts_str)
+                            .is_some_and(|ot| ot > *their_ts)
                     }
                     // If timestamps are missing, presence of our reply is enough
                     _ => true,

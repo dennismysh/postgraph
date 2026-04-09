@@ -457,12 +457,12 @@ async fn main() {
         )
         .route("/api/replies", get(routes::replies::list_replies))
         .route("/api/replies/count", get(routes::replies::count_unreplied))
+        .route("/api/replies/detect", post(routes::replies::detect_replies))
         .route("/api/replies/{id}/reply", post(routes::replies::send_reply))
         .route(
             "/api/replies/{id}/dismiss",
             post(routes::replies::dismiss_reply),
         )
-        .route("/api/replies/detect", post(routes::replies::detect_replies))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,
