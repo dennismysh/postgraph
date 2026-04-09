@@ -87,6 +87,12 @@ pub struct PublishResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MeResponse {
+    pub id: String,
+    pub username: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ThreadsReply {
     pub id: String,
     pub text: Option<String>,
@@ -168,6 +174,25 @@ impl ThreadsClient {
             return Err(AppError::ThreadsApi(body));
         }
         Ok(())
+    }
+
+    /// Fetch the authenticated user's profile (id + username).
+    pub async fn get_me(&self) -> Result<MeResponse, AppError> {
+        let url = format!(
+            "{}/me?fields=id,username&access_token={}",
+            BASE_URL,
+            self.token().await
+        );
+        let resp = self.client.get(&url).send().await?;
+        if resp.status() == 429 {
+            return Err(AppError::RateLimited(60));
+        }
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::ThreadsApi(format!("Get /me failed: {body}")));
+        }
+        let data: MeResponse = resp.json().await?;
+        Ok(data)
     }
 
     pub async fn get_user_threads(
