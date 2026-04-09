@@ -286,6 +286,27 @@ export interface PublishNowResponse {
   threads_post_id: string;
 }
 
+export interface ReplyWithContext {
+  id: string;
+  parent_post_id: string;
+  username: string | null;
+  text: string | null;
+  timestamp: string | null;
+  status: 'unreplied' | 'replied' | 'dismissed';
+  replied_at: string | null;
+  our_reply_id: string | null;
+  synced_at: string;
+  parent_post_text: string | null;
+}
+
+export interface ReplyCountResponse {
+  count: number;
+}
+
+export interface SendReplyResponse {
+  our_reply_id: string;
+}
+
 export const api = {
   getGraph: (intent?: string, timeRange?: string) => {
     const params = new URLSearchParams();
@@ -494,5 +515,37 @@ export const api = {
         throw new Error(data.error ?? `Publish failed (${r.status})`);
       }
       return r.json() as Promise<PublishNowResponse>;
+    }),
+
+  // Replies
+  getReplies: (status?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    const qs = params.toString();
+    return fetchApi<ReplyWithContext[]>(`/api/replies${qs ? `?${qs}` : ''}`);
+  },
+
+  getReplyCount: () => fetchApi<ReplyCountResponse>('/api/replies/count'),
+
+  sendReply: (id: string, text: string) =>
+    fetch(`/api/replies/${id}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    }).then(async r => {
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({ error: `Reply failed (${r.status})` }));
+        throw new Error(data.error ?? `Reply failed (${r.status})`);
+      }
+      return r.json() as Promise<SendReplyResponse>;
+    }),
+
+  dismissReply: (id: string) =>
+    fetch(`/api/replies/${id}/dismiss`, { method: 'POST' }).then(async r => {
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({ error: `Dismiss failed (${r.status})` }));
+        throw new Error(data.error ?? `Dismiss failed (${r.status})`);
+      }
+      return r.json() as Promise<{ dismissed: boolean }>;
     }),
 };
