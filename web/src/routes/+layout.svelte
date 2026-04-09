@@ -18,20 +18,23 @@
 
 <div class="layout">
   <nav>
-    <div class="nav-links">
+    <div class="nav-primary">
       <a href="/" class:active={$page.url.pathname === '/'}>Graph</a>
-      <a href="/analytics" class:active={$page.url.pathname === '/analytics'}>Analytics</a>
-      <a href="/analytics-v2" class:active={$page.url.pathname === '/analytics-v2'}>V2</a>
+      <a href="/analytics-v2" class:active={$page.url.pathname === '/analytics-v2'}>Analytics</a>
       <a href="/insights" class:active={$page.url.pathname === '/insights'}>Insights</a>
       <a href="/compose" class:active={$page.url.pathname === '/compose'}>Compose</a>
       <a href="/replies" class:active={$page.url.pathname === '/replies'}>
         Replies{#if unrepliedCount > 0} ({unrepliedCount}){/if}
       </a>
-      <a href="/fourier" class:active={$page.url.pathname === '/fourier'}>ƒ(t)</a>
+    </div>
+    <div class="nav-secondary">
+      <a href="/analytics" class:active={$page.url.pathname === '/analytics'}>Legacy</a>
+      <a href="/fourier" class:active={$page.url.pathname === '/fourier'}>f(t)</a>
       <a href="/debug" class:active={$page.url.pathname === '/debug'}>Debug</a>
       <a href="/health" class:active={$page.url.pathname === '/health'}>Health</a>
+      <span class="nav-divider"></span>
+      <a href="/logout" class="logout">Logout</a>
     </div>
-    <a href="/logout" class="logout">Logout</a>
   </nav>
   <div class="content">
     {@render children()}
@@ -76,24 +79,44 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.5rem 1rem;
-    border-bottom: 1px solid #333;
+    padding: var(--space-sm) var(--space-lg);
+    border-bottom: 1px solid #1e1e1e;
+    gap: var(--space-lg);
   }
-  .nav-links {
+  .nav-primary {
     display: flex;
-    gap: 1rem;
+    gap: var(--space-xs);
   }
-  nav a {
+  .nav-primary a {
     color: #888;
     text-decoration: none;
-    padding: 0.3rem 0.6rem;
+    padding: var(--space-xs) var(--space-sm);
     border-radius: 4px;
     font-size: var(--text-sm);
     font-weight: var(--weight-medium);
     letter-spacing: 0.01em;
+    transition: color 0.15s;
   }
-  nav a.active { color: #fff; background: #333; }
-  .logout { color: #888; font-size: var(--text-xs); }
+  .nav-primary a:hover { color: #ccc; }
+  .nav-primary a.active { color: #fff; background: #222; }
+  .nav-secondary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+  .nav-secondary a {
+    color: #555;
+    text-decoration: none;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: 4px;
+    font-size: var(--text-xs);
+    letter-spacing: 0.01em;
+    transition: color 0.15s;
+  }
+  .nav-secondary a:hover { color: #999; }
+  .nav-secondary a.active { color: #aaa; background: #1a1a1a; }
+  .nav-divider { width: 1px; height: 1rem; background: #2a2a2a; }
+  .logout { color: #555; font-size: var(--text-xs); }
   .logout:hover { color: #e6194b; }
   .content { flex: 1; overflow-y: auto; min-height: 0; }
 
