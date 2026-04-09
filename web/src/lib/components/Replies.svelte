@@ -4,10 +4,12 @@
   import { api, type ReplyWithContext } from '$lib/api';
 
   type Filter = 'unreplied' | 'all';
+  type SortOrder = 'newest' | 'oldest';
 
   let replies: ReplyWithContext[] = $state([]);
   let loading = $state(true);
   let filter: Filter = $state('unreplied');
+  let sort: SortOrder = $state('newest');
 
   // Inline reply state — keyed by reply ID
   let replyingTo: string | null = $state(null);
@@ -19,6 +21,17 @@
   const MAX_LENGTH = 500;
   let charCount = $derived(replyText.length);
   let overLimit = $derived(charCount > MAX_LENGTH);
+
+  let sortedReplies = $derived(() => {
+    if (sort === 'newest') {
+      return [...replies].sort((a, b) => {
+        const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return tb - ta;
+      });
+    }
+    return replies;
+  });
 
   async function loadReplies() {
     loading = true;
@@ -99,9 +112,14 @@
 <div class="replies-page">
   <div class="toolbar">
     <h2>Replies</h2>
-    <div class="filter-toggle">
-      <button class:active={filter === 'unreplied'} onclick={() => filter = 'unreplied'}>Unreplied</button>
-      <button class:active={filter === 'all'} onclick={() => filter = 'all'}>All</button>
+    <div class="toolbar-right">
+      <button class="sort-btn" onclick={() => sort = sort === 'newest' ? 'oldest' : 'newest'}>
+        {sort === 'newest' ? 'Newest first' : 'Oldest first'}
+      </button>
+      <div class="filter-toggle">
+        <button class:active={filter === 'unreplied'} onclick={() => filter = 'unreplied'}>Unreplied</button>
+        <button class:active={filter === 'all'} onclick={() => filter = 'all'}>All</button>
+      </div>
     </div>
   </div>
 
@@ -113,7 +131,7 @@
     </div>
   {:else}
     <div class="reply-list">
-      {#each replies as reply (reply.id)}
+      {#each sortedReplies() as reply (reply.id)}
         <div class="reply-card" class:removing={removing.has(reply.id)}>
           <div class="parent-context">
             {reply.parent_post_text ?? 'Your post'}
@@ -177,6 +195,22 @@
     margin-bottom: var(--space-xl);
   }
   .toolbar h2 { margin: 0; font-size: var(--text-xl); font-weight: var(--weight-semibold); letter-spacing: -0.02em; }
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+  }
+  .sort-btn {
+    background: transparent;
+    border: 1px solid #2a2a2a;
+    color: #888;
+    padding: var(--space-xs) var(--space-md);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+  }
+  .sort-btn:hover { border-color: #444; color: #ccc; }
   .filter-toggle {
     display: flex;
     gap: var(--space-xs);
