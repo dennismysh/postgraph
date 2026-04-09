@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import { fade, slide } from 'svelte/transition';
   import { api, type ReplyWithContext } from '$lib/api';
 
   type Filter = 'unreplied' | 'all';
@@ -13,6 +14,7 @@
   let replyText = $state('');
   let sending = $state(false);
   let error = $state('');
+  let removing: Set<string> = $state(new Set());
 
   const MAX_LENGTH = 500;
   let charCount = $derived(replyText.length);
@@ -41,6 +43,14 @@
     error = '';
   }
 
+  function fadeOutThenRemove(id: string) {
+    removing = new Set([...removing, id]);
+    setTimeout(() => {
+      replies = replies.filter(r => r.id !== id);
+      removing = new Set([...removing].filter(x => x !== id));
+    }, 250);
+  }
+
   async function sendReply(id: string) {
     if (replyText.trim().length === 0 || overLimit) return;
     sending = true;
@@ -49,8 +59,7 @@
       await api.sendReply(id, replyText);
       replyingTo = null;
       replyText = '';
-      // Remove from list
-      replies = replies.filter(r => r.id !== id);
+      fadeOutThenRemove(id);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to send reply';
     } finally {
@@ -61,7 +70,7 @@
   async function dismiss(id: string) {
     try {
       await api.dismissReply(id);
-      replies = replies.filter(r => r.id !== id);
+      fadeOutThenRemove(id);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to dismiss';
     }
@@ -105,7 +114,7 @@
   {:else}
     <div class="reply-list">
       {#each replies as reply (reply.id)}
-        <div class="reply-card">
+        <div class="reply-card" class:removing={removing.has(reply.id)}>
           <div class="parent-context">
             {reply.parent_post_text ?? 'Your post'}
           </div>
@@ -128,7 +137,7 @@
           {/if}
 
           {#if replyingTo === reply.id}
-            <div class="reply-compose">
+            <div class="reply-compose" transition:slide={{ duration: 200 }}>
               {#if error}
                 <div class="error">{error}</div>
               {/if}
@@ -200,9 +209,10 @@
     border: 1px solid #1e1e1e;
     border-radius: 6px;
     padding: var(--space-md) var(--space-lg);
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color 0.15s, background 0.15s, opacity 0.25s cubic-bezier(0.25, 1, 0.5, 1), transform 0.25s cubic-bezier(0.25, 1, 0.5, 1);
   }
   .reply-card:hover { border-color: #2a2a2a; background: #171717; }
+  .reply-card.removing { opacity: 0; transform: translateX(-8px); }
   .parent-context {
     font-size: var(--text-xs);
     color: #555;
@@ -298,5 +308,10 @@
   .compose-actions {
     display: flex;
     gap: var(--space-sm);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reply-card { transition: none; }
+    .reply-card.removing { transform: none; }
   }
 </style>

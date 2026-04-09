@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fade, fly } from 'svelte/transition';
   import { api, type ScheduledPost } from '$lib/api';
 
   interface Props {
@@ -127,8 +128,8 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="overlay" onclick={onclose}>
-  <div class="modal" onclick={(e) => e.stopPropagation()}>
+<div class="overlay" onclick={onclose} transition:fade={{ duration: 200 }}>
+  <div class="modal" onclick={(e) => e.stopPropagation()} transition:fly={{ y: 16, duration: 300 }}>
     <div class="header">
       <h3>{isEditing ? 'Edit Post' : 'New Post'}</h3>
       <button class="close-btn" onclick={onclose}>&times;</button>

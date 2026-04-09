@@ -96,4 +96,12 @@
   .logout { color: #888; font-size: var(--text-xs); }
   .logout:hover { color: #e6194b; }
   .content { flex: 1; overflow-y: auto; min-height: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(*, *::before, *::after) {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 </style>
