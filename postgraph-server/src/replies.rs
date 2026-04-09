@@ -122,3 +122,33 @@ pub async fn recent_post_ids(pool: &PgPool, days: i32) -> Result<Vec<String>, Ap
     .await?;
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
+
+/// Get all unreplied reply IDs grouped by parent_post_id.
+/// Returns (parent_post_id, Vec<(reply_id, reply_timestamp)>).
+pub async fn unreplied_grouped_by_parent(
+    pool: &PgPool,
+) -> Result<std::collections::HashMap<String, Vec<(String, Option<DateTime<Utc>>)>>, AppError> {
+    let rows: Vec<(String, String, Option<DateTime<Utc>>)> = sqlx::query_as(
+        "SELECT parent_post_id, id, timestamp FROM replies WHERE status = 'unreplied' ORDER BY parent_post_id"
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut map: std::collections::HashMap<String, Vec<(String, Option<DateTime<Utc>>)>> =
+        std::collections::HashMap::new();
+    for (parent, id, ts) in rows {
+        map.entry(parent).or_default().push((id, ts));
+    }
+    Ok(map)
+}
+
+/// Mark a reply as replied (detected externally — no our_reply_id).
+pub async fn mark_replied_external(pool: &PgPool, id: &str) -> Result<bool, AppError> {
+    let result = sqlx::query(
+        "UPDATE replies SET status = 'replied', replied_at = now() WHERE id = $1 AND status = 'unreplied'"
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
