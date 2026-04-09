@@ -193,6 +193,59 @@ pub async fn sync_daily_views(pool: &PgPool, client: &ThreadsClient) -> Result<u
     Ok(upserted)
 }
 
+// ── Task 4: Reply Sync ─────────────────────────────────────────
+
+/// Sync replies for posts from the last 7 days.
+/// New replies are inserted with status 'unreplied'. Existing replies only update synced_at.
+pub async fn sync_replies(
+    pool: &PgPool,
+    client: &ThreadsClient,
+) -> Result<u32, AppError> {
+    let post_ids = crate::replies::recent_post_ids(pool, 7).await?;
+    info!("Syncing replies for {} recent posts", post_ids.len());
+
+    let mut total_synced: u32 = 0;
+
+    for post_id in &post_ids {
+        let replies = match client.get_post_replies(post_id).await {
+            Ok(r) => r,
+            Err(AppError::RateLimited(_)) => {
+                warn!("Rate limited during reply sync, aborting cycle");
+                return Ok(total_synced);
+            }
+            Err(e) => {
+                warn!("Failed to fetch replies for {post_id}: {e}");
+                continue;
+            }
+        };
+
+        for reply in &replies {
+            let ts = reply.timestamp.as_deref().and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(s)
+                    .ok()
+                    .or_else(|| chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%z").ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            });
+
+            crate::replies::upsert_reply(
+                pool,
+                &reply.id,
+                post_id,
+                reply.username.as_deref(),
+                reply.text.as_deref(),
+                ts,
+            ).await?;
+            total_synced += 1;
+        }
+
+        // Brief pause between posts to avoid rate limits
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    info!("Synced {total_synced} replies");
+    Ok(total_synced)
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 fn parse_threads_timestamp(ts: &str) -> Option<DateTime<Utc>> {
