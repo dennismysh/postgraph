@@ -86,6 +86,20 @@ pub struct PublishResponse {
     pub id: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ThreadsReply {
+    pub id: String,
+    pub text: Option<String>,
+    pub username: Option<String>,
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RepliesResponse {
+    pub data: Vec<ThreadsReply>,
+    pub paging: Option<ThreadsPaging>,
+}
+
 #[derive(Debug, Default)]
 pub struct PostInsights {
     pub views: i32,
@@ -346,5 +360,90 @@ impl ThreadsClient {
         }
         let data: PublishResponse = resp.json().await?;
         Ok(data.id)
+    }
+
+    /// Fetch replies to a specific post.
+    pub async fn get_post_replies(&self, post_id: &str) -> Result<Vec<ThreadsReply>, AppError> {
+        let mut all_replies = Vec::new();
+        let mut url = format!(
+            "{}/{}/replies?fields=id,text,username,timestamp&access_token={}",
+            BASE_URL,
+            post_id,
+            self.token().await
+        );
+
+        loop {
+            let resp = self.client.get(&url).send().await?;
+            if resp.status() == 429 {
+                return Err(AppError::RateLimited(60));
+            }
+            if !resp.status().is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                return Err(AppError::ThreadsApi(format!(
+                    "Get replies failed for {post_id}: {body}"
+                )));
+            }
+
+            let data: RepliesResponse = resp.json().await?;
+            all_replies.extend(data.data);
+
+            let has_next = data
+                .paging
+                .as_ref()
+                .and_then(|p| p.next.as_ref())
+                .is_some();
+            if !has_next {
+                break;
+            }
+
+            let next_cursor = data
+                .paging
+                .as_ref()
+                .and_then(|p| p.cursors.as_ref())
+                .and_then(|c| c.after.clone());
+            match next_cursor {
+                Some(cursor) => {
+                    url = format!(
+                        "{}/{}/replies?fields=id,text,username,timestamp&after={}&access_token={}",
+                        BASE_URL,
+                        post_id,
+                        cursor,
+                        self.token().await
+                    );
+                }
+                None => break,
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        Ok(all_replies)
+    }
+
+    /// Create a reply to a post. Two-step publish with reply_to_id.
+    pub async fn create_reply(&self, reply_to_id: &str, text: &str) -> Result<String, AppError> {
+        let url = format!(
+            "{}/me/threads?media_type=TEXT&text={}&reply_to_id={}&access_token={}",
+            BASE_URL,
+            urlencoding::encode(text),
+            reply_to_id,
+            self.token().await
+        );
+
+        let resp = self.client.post(&url).send().await?;
+        if resp.status() == 429 {
+            return Err(AppError::RateLimited(60));
+        }
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::ThreadsApi(format!(
+                "Create reply container failed: {body}"
+            )));
+        }
+        let data: CreateContainerResponse = resp.json().await?;
+        let container_id = data.id;
+
+        // Step 2: publish the container
+        self.publish_container(&container_id).await
     }
 }
