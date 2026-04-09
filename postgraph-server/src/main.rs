@@ -142,6 +142,10 @@ async fn main() {
             if let Err(e) = sync::sync_post_metrics(&bg_state.pool, &bg_state.threads, None).await {
                 tracing::error!("Background metrics refresh failed: {e}");
             }
+            // Task 3: Sync replies for recent posts
+            if let Err(e) = sync::sync_replies(&bg_state.pool, &bg_state.threads).await {
+                tracing::error!("Background reply sync failed: {e}");
+            }
             // Task 3: Refresh daily views (idempotent upsert, fetches last 7 days)
             if let Err(e) = sync::sync_daily_views(&bg_state.pool, &bg_state.threads).await {
                 tracing::error!("Background daily views sync failed: {e}");
@@ -402,6 +406,10 @@ async fn main() {
         .route("/api/compose", get(routes::compose::list_posts).post(routes::compose::create_post))
         .route("/api/compose/{id}", get(routes::compose::get_post).put(routes::compose::update_post).delete(routes::compose::delete_post))
         .route("/api/compose/{id}/publish", post(routes::compose::publish_now))
+        .route("/api/replies", get(routes::replies::list_replies))
+        .route("/api/replies/count", get(routes::replies::count_unreplied))
+        .route("/api/replies/{id}/reply", post(routes::replies::send_reply))
+        .route("/api/replies/{id}/dismiss", post(routes::replies::dismiss_reply))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,

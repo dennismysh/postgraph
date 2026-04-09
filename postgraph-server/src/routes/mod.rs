@@ -7,5 +7,6 @@ pub mod health;
 pub mod insights;
 pub mod posts;
 pub mod reanalyze;
+pub mod replies;
 pub mod subjects;
 pub mod sync;
